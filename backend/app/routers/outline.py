@@ -1,7 +1,8 @@
 """目录相关API路由"""
 from fastapi import APIRouter, HTTPException
 from ..models.schemas import OutlineRequest, OutlineResponse
-from ..services.openai_service import OpenAIService
+# from ..services.openai_service import OpenAIService
+from ..services.qwen_openai_service import OpenAIService
 from ..utils.config_manager import config_manager
 from ..utils import prompt_manager
 from ..utils.sse import sse_response

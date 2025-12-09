@@ -3,7 +3,8 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from ..models.schemas import FileUploadResponse, AnalysisRequest, AnalysisType, WordExportRequest
 from ..services.file_service import FileService
-from ..services.openai_service import OpenAIService
+# from ..services.openai_service import OpenAIService
+from ..services.qwen_openai_service import OpenAIService
 from ..utils.config_manager import config_manager
 from ..utils.sse import sse_response
 import json

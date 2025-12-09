@@ -2,7 +2,8 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from ..models.schemas import FileUploadResponse
 from ..services.file_service import FileService
 from ..utils import prompt_manager
-from ..services.openai_service import OpenAIService
+# from ..services.openai_service import OpenAIService
+from ..services.qwen_openai_service import OpenAIService
 
 router = APIRouter(prefix="/api/expand", tags=["标书扩写"])
 
