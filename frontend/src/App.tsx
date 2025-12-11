@@ -9,6 +9,7 @@ import DocumentAnalysis from './pages/DocumentAnalysis';
 import OutlineEdit from './pages/OutlineEdit';
 import ContentEdit from './pages/ContentEdit';
 
+
 function App() {
   const {
     state,
@@ -51,8 +52,10 @@ function App() {
             outlineData={state.outlineData}
             selectedChapter={state.selectedChapter}
             onChapterSelect={updateSelectedChapter}
+            updateOutline={updateOutline}
           />
         );
+
       default:
         return null;
     }
@@ -90,12 +93,15 @@ function App() {
             </button>
 
             <button
-              onClick={nextStep}
-              disabled={state.currentStep === steps.length - 1}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              下一步
-            </button>
+            onClick={() => {
+              console.log('点击下一步按钮，当前步骤:', state.currentStep);
+              nextStep();
+            }}
+            disabled={state.currentStep === steps.length - 1 || (state.currentStep === 1 && !state.outlineData)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            下一步 ({state.currentStep}/{steps.length - 1})
+          </button>
           </div>
         </div>
       </div>

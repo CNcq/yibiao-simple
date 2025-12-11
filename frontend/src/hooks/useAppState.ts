@@ -16,6 +16,7 @@ const initialState: AppState = {
   techRequirements: '',
   outlineData: null,
   selectedChapter: '',
+
 };
 
 export const useAppState = () => {
@@ -42,17 +43,25 @@ export const useAppState = () => {
   }, []);
 
   const updateOutline = useCallback((outlineData: OutlineData) => {
-    setState(prev => ({ ...prev, outlineData }));
-  }, []);
+    console.log('更新目录数据:', outlineData);
+    console.log('更新前的状态:', state);
+    setState(prev => {
+      const newState = { ...prev, outlineData };
+      console.log('更新后的状态:', newState);
+      return newState;
+    });
+  }, [state]);
 
   const updateSelectedChapter = useCallback((chapterId: string) => {
     setState(prev => ({ ...prev, selectedChapter: chapterId }));
   }, []);
 
+
+
   const nextStep = useCallback(() => {
     setState(prev => ({ 
       ...prev, 
-      currentStep: Math.min(prev.currentStep + 1, 2) 
+      currentStep: Math.min(prev.currentStep + 1, 2) // 更新为支持3个步骤（索引0-2）
     }));
   }, []);
 

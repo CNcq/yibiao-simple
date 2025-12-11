@@ -18,7 +18,7 @@ class ConfigManager:
     def load_config(self) -> Dict:
         """从本地JSON文件加载配置"""
         default_config = {
-            'api_key': '',
+            'api_key': 'sk-eb33ccdad18a4e50b1b4d530a7b0cef4',
             'base_url': '',
             'model_name': 'gpt-3.5-turbo'
         }

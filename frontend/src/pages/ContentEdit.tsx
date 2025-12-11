@@ -2,7 +2,29 @@
  * 内容编辑页面 - 完整标书预览和生成
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
+
+import { EditorContent, useEditor } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Heading from '@tiptap/extension-heading';
+import Bold from '@tiptap/extension-bold';
+import Italic from '@tiptap/extension-italic';
+import Underline from '@tiptap/extension-underline';
+import Strike from '@tiptap/extension-strike';
+import Code from '@tiptap/extension-code';
+import CodeBlock from '@tiptap/extension-code-block';
+import BulletList from '@tiptap/extension-bullet-list';
+import OrderedList from '@tiptap/extension-ordered-list';
+import ListItem from '@tiptap/extension-list-item';
+import Blockquote from '@tiptap/extension-blockquote';
+import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
+import { Table, TableHeader } from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TextAlign from '@tiptap/extension-text-align';
+import Placeholder from '@tiptap/extension-placeholder';
+
 import { OutlineData, OutlineItem } from '../types';
 import { DocumentTextIcon, PlayIcon, DocumentArrowDownIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowUpIcon } from '@heroicons/react/24/outline';
 import { contentApi, ChapterContentRequest, documentApi } from '../services/api';
@@ -11,8 +33,9 @@ import { Paragraph, TextRun } from 'docx';
 
 interface ContentEditProps {
   outlineData: OutlineData | null;
-  selectedChapter: string;
+  selectedChapter: string | null;
   onChapterSelect: (chapterId: string) => void;
+  updateOutline: (outlineData: OutlineData) => void;
 }
 
 interface GenerationProgress {
@@ -27,6 +50,7 @@ const ContentEdit: React.FC<ContentEditProps> = ({
   outlineData,
   selectedChapter,
   onChapterSelect,
+  updateOutline,
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState<GenerationProgress>({
@@ -38,6 +62,8 @@ const ContentEdit: React.FC<ContentEditProps> = ({
   });
   const [leafItems, setLeafItems] = useState<OutlineItem[]>([]);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null); // 当前正在编辑的章节ID
+  const [editContent, setEditContent] = useState<string>(''); // 编辑模式下的内容
 
   // 收集所有叶子节点
   const collectLeafItems = useCallback((items: OutlineItem[]): OutlineItem[] => {
@@ -88,6 +114,85 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     return [];
   }, []);
 
+  // 生成唯一ID
+  const generateId = (): string => {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+  };
+
+  // 新增子目录
+  const handleAddSubChapter = (parentId: string) => {
+    if (!outlineData || !updateOutline) return;
+
+    const addSubChapter = (items: OutlineItem[]): OutlineItem[] => {
+      return items.map(item => {
+        if (item.id === parentId) {
+          // 找到父节点，添加新的子节点
+          const newItem: OutlineItem = {
+            id: generateId(),
+            title: `新章节 ${item.children ? item.children.length + 1 : 1}`,
+            description: '',
+            content: '',
+            children: []
+          };
+          
+          return {
+            ...item,
+            children: [...(item.children || []), newItem]
+          };
+        }
+        
+        // 递归处理子节点
+        if (item.children && item.children.length > 0) {
+          return {
+            ...item,
+            children: addSubChapter(item.children)
+          };
+        }
+        
+        return item;
+      });
+    };
+
+    const updatedOutline = addSubChapter(outlineData.outline);
+    updateOutline({ ...outlineData, outline: updatedOutline });
+  };
+
+  // 删除目录
+  const handleDeleteChapter = (chapterId: string) => {
+    if (!outlineData || !updateOutline) return;
+
+    // 确认删除
+    if (!window.confirm('确定要删除这个目录吗？')) {
+      return;
+    }
+
+    const deleteChapter = (items: OutlineItem[]): OutlineItem[] => {
+      return items.filter(item => {
+        if (item.id === chapterId) {
+          return false; // 删除当前项
+        }
+        
+        // 递归处理子节点
+        if (item.children && item.children.length > 0) {
+          item.children = deleteChapter(item.children);
+        }
+        
+        return true;
+      });
+    };
+
+    const updatedOutline = deleteChapter(outlineData.outline);
+    updateOutline({ ...outlineData, outline: updatedOutline });
+
+    // 如果删除的是当前选中的章节，清除选中状态
+    if (selectedChapter === chapterId) {
+      onChapterSelect('');
+    }
+  };
+
+  // 同步更新富文本编辑器内容
+
+
   useEffect(() => {
     if (outlineData) {
       const leaves = collectLeafItems(outlineData.outline);
@@ -118,54 +223,519 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     return !item.children || item.children.length === 0;
   };
 
-  // 渲染目录结构
-  const renderOutline = (items: OutlineItem[], level: number = 1): React.ReactElement[] => {
+  // 创建Tiptap编辑器
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Heading.configure({ levels: [1, 2, 3] }),
+      Bold,
+      Italic,
+      Underline,
+      Strike,
+      Code,
+      CodeBlock,
+      BulletList,
+      OrderedList,
+      ListItem,
+      Blockquote,
+      HorizontalRule,
+      Link.configure({ openOnClick: false }),
+      Image,
+      Table,
+      TableHeader,
+      TableRow,
+      TableCell,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      Placeholder.configure({
+        placeholder: '请输入内容...',
+      }),
+    ],
+    content: '',
+    onUpdate: ({ editor }) => {
+      const content = editor.getHTML();
+      setEditContent(content);
+      
+      // 实时更新leafItems中的内容
+      if (editingItemId) {
+        setLeafItems(prev => {
+          return prev.map(item => {
+            if (item.id === editingItemId) {
+              return { ...item, content };
+            }
+            return item;
+          });
+        });
+      }
+    },
+  });
+
+  // 开始编辑内容
+  const handleStartEdit = (itemId: string, currentContent: string) => {
+    setEditingItemId(itemId);
+    const safeContent = currentContent || '';
+    setEditContent(safeContent);
+    
+    // 延迟设置编辑器内容，确保编辑器已经初始化
+    setTimeout(() => {
+      if (editor) {
+        editor.commands.setContent(safeContent);
+      }
+    }, 0);
+  };
+
+  // 保存编辑的内容
+  const handleSaveEdit = () => {
+    if (!editingItemId) return;
+
+    // 更新本地状态
+    setLeafItems(prevItems => {
+      return prevItems.map(item => {
+        if (item.id === editingItemId) {
+          return { ...item, content: editContent };
+        }
+        return item;
+      });
+    });
+
+    // 退出编辑模式
+    setEditingItemId(null);
+  };
+
+  // 取消编辑
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+  };
+
+  // 递归渲染目录树
+  const renderOutlineTree = (items: OutlineItem[], expandedItems: Set<string>): React.ReactElement[] => {
     return items.map((item) => {
       const isLeaf = isLeafNode(item);
-      const currentContent = isLeaf ? getLeafItemContent(item.id) : item.content;
+      const isExpanded = expandedItems.has(item.id);
+      const hasChildren = item.children && item.children.length > 0;
       
       return (
-        <div key={item.id} className={`mb-${level === 1 ? '8' : '4'}`}>
-          {/* 标题 */}
-          <div className={`text-${level === 1 ? 'xl' : level === 2 ? 'lg' : 'base'} font-${level === 1 ? 'bold' : 'semibold'} text-gray-900 mb-2`}>
-            {item.id} {item.title}
+        <div key={item.id} className="mb-2">
+          {/* 节点标题行 */}
+          <div className="flex items-center gap-2 py-1">
+            {/* 展开/折叠按钮 */}
+            {hasChildren && (
+              <button 
+                onClick={() => {
+                  const newExpanded = new Set(expandedItems);
+                  if (isExpanded) {
+                    newExpanded.delete(item.id);
+                  } else {
+                    newExpanded.add(item.id);
+                  }
+                  setExpandedItems(newExpanded);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg 
+                  className={`w-4 h-4 transition-transform ${isExpanded ? 'transform rotate-90' : ''}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+            {!hasChildren && <div className="w-4" />}
+            
+            {/* 节点标题 */}
+            <div 
+              className={`text-sm font-medium flex-1 cursor-pointer ${selectedChapter === item.id ? 'text-blue-600' : 'text-gray-900 hover:text-blue-500'}`}
+              onClick={() => onChapterSelect(item.id)}
+            >
+              {item.id} {item.title}
+            </div>
+            
+            {/* 操作按钮组 */}
+            <div className="flex items-center gap-1 ml-2">
+              {/* 新增子目录按钮 */}
+              <button
+                onClick={() => handleAddSubChapter(item.id)}
+                className="p-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
+                title="新增子目录"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+              
+              {/* 编辑和生成按钮 - 仅叶子节点显示 */}
+              {isLeaf && (
+                <>
+                  <button
+                    onClick={() => handleStartEdit(item.id, getLeafItemContent(item.id) || '')}
+                    className="p-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
+                    title="编辑内容"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => handleGenerateContentForItem(item)}
+                    disabled={progress.generating.has(item.id)}
+                    className={`p-1 text-xs ${progress.generating.has(item.id) ? 'text-gray-400 cursor-not-allowed' : 'text-green-600 hover:text-green-800 hover:bg-green-50 rounded'}`}
+                    title="生成内容"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </button>
+                </>
+              )}
+              
+              {/* 删除按钮 */}
+              <button
+                onClick={() => handleDeleteChapter(item.id)}
+                className="p-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                title="删除目录"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
           </div>
           
-          {/* 描述 */}
-          <div className="text-sm text-gray-600 mb-4">
-            {item.description}
-          </div>
-
-          {/* 内容（仅叶子节点） */}
-          {isLeaf && (
-            <div className="border-l-4 border-blue-200 pl-4 mb-6">
-              {currentContent ? (
-                <div className="prose max-w-none">
-                  <ReactMarkdown>{currentContent}</ReactMarkdown>
-                </div>
-              ) : (
-                <div className="text-gray-400 italic py-4">
-                  <DocumentTextIcon className="inline w-4 h-4 mr-2" />
-                  {progress.generating.has(item.id) ? (
-                    <span className="text-blue-600">正在生成内容...</span>
-                  ) : (
-                    '内容待生成...'
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 子章节 */}
-          {item.children && item.children.length > 0 && (
-            <div className={`ml-${level * 4} mt-4`}>
-              {renderOutline(item.children, level + 1)}
-            </div>
-          )}
+          {/* 子节点 */}
+            {hasChildren && isExpanded && (
+              <div className="pl-6 mt-1 border-l-2 border-gray-100">
+                {renderOutlineTree(item.children || [], expandedItems)}
+              </div>
+            )}
         </div>
       );
     });
   };
+  
+  // 渲染完整的目录结构
+  const renderOutline = (): React.ReactElement => {
+    if (!outlineData?.outline) return <div>加载中...</div>;
+    
+    return (
+      <div className="max-w-7xl mx-auto bg-white p-6 rounded-lg shadow-md">
+        {/* 顶部导航 */}
+        <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+          <h1 className="text-xl font-bold text-gray-900">标书名称</h1>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-600">当前字数: {getTotalWordCount()}</span>
+            <button
+              onClick={handleGenerateContent}
+              disabled={isGenerating}
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${isGenerating ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
+            >
+              生成全文
+            </button>
+          </div>
+        </div>
+        
+        {/* 主要内容区域 */}
+        <div className="flex gap-6">
+          {/* 左侧目录树 */}
+          <div className="w-72 bg-gray-50 p-4 rounded-lg border border-gray-200 overflow-y-auto max-h-[calc(100vh-200px)]">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">目录</h2>
+            {renderOutlineTree(outlineData.outline, expandedItems)}
+          </div>
+          
+          {/* 右侧编辑区域 */}
+          <div className="flex-1 bg-white p-4 rounded-lg border border-gray-200">
+            {/* 当前选中的章节内容 */}
+            {selectedChapter ? (
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  {getChapterTitle(selectedChapter)}
+                </h2>
+                
+                {/* 编辑模式 */}
+                {editingItemId === selectedChapter ? (
+                  <div>
+                    <div className="mb-4">
+                      <div className="border border-gray-200 rounded-md overflow-hidden">
+                        {/* 编辑器工具栏 */}
+                        {editor && (
+                          <div className="flex flex-wrap items-center gap-2 p-2 bg-gray-50 border-b border-gray-200">
+                            {/* 格式设置 */}
+                            <div className="flex items-center gap-1">
+                              <select 
+                                className="px-2 py-1 text-sm border border-gray-300 rounded bg-white"
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value === '0') {
+                                    editor.commands.setParagraph();
+                                  } else {
+                                    editor.commands.toggleHeading({ level: parseInt(value) as 1 | 2 | 3 });
+                                  }
+                                }}
+                                value={editor.isActive('heading', { level: 1 }) ? '1' : 
+                                       editor.isActive('heading', { level: 2 }) ? '2' : 
+                                       editor.isActive('heading', { level: 3 }) ? '3' : '0'}
+                              >
+                                <option value="0">段落</option>
+                                <option value="1">标题 1</option>
+                                <option value="2">标题 2</option>
+                                <option value="3">标题 3</option>
+                              </select>
+                            </div>
+                            
+                            <div className="border-r border-gray-300 h-6"></div>
+                            
+                            {/* 文本样式 */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive('bold') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().toggleBold().run()}
+                                title="粗体"
+                              >
+                                <strong>B</strong>
+                              </button>
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive('italic') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().toggleItalic().run()}
+                                title="斜体"
+                              >
+                                <em>I</em>
+                              </button>
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive('underline') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().toggleUnderline().run()}
+                                title="下划线"
+                              >
+                                <u>U</u>
+                              </button>
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive('strike') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().toggleStrike().run()}
+                                title="删除线"
+                              >
+                                <s>S</s>
+                              </button>
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive('code') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().toggleCode().run()}
+                                title="行内代码"
+                              >
+                                <code>{`</>`}</code>
+                              </button>
+                            </div>
+                            
+                            <div className="border-r border-gray-300 h-6"></div>
+                            
+                            {/* 列表 */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive('bulletList') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().toggleBulletList().run()}
+                                title="无序列表"
+                              >
+                                • 列表
+                              </button>
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive('orderedList') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                                title="有序列表"
+                              >
+                                1. 列表
+                              </button>
+                            </div>
+                            
+                            <div className="border-r border-gray-300 h-6"></div>
+                            
+                            {/* 其他格式 */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive('blockquote') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                                title="引用"
+                              >
+                                ""
+                              </button>
+                              <button
+                                className="px-2 py-1 text-sm rounded hover:bg-gray-200"
+                                onClick={() => editor.chain().focus().setHorizontalRule().run()}
+                                title="分割线"
+                              >
+                                —
+                              </button>
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive('codeBlock') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                                title="代码块"
+                              >
+                                代码块
+                              </button>
+                            </div>
+                            
+                            <div className="border-r border-gray-300 h-6"></div>
+                            
+                            {/* 对齐方式 */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive({ textAlign: 'left' }) ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().setTextAlign('left').run()}
+                                title="左对齐"
+                              >
+                                左
+                              </button>
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive({ textAlign: 'center' }) ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().setTextAlign('center').run()}
+                                title="居中对齐"
+                              >
+                                中
+                              </button>
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive({ textAlign: 'right' }) ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().setTextAlign('right').run()}
+                                title="右对齐"
+                              >
+                                右
+                              </button>
+                              <button
+                                className={`px-2 py-1 text-sm rounded ${editor.isActive({ textAlign: 'justify' }) ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-200'}`}
+                                onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+                                title="两端对齐"
+                              >
+                                齐
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* 编辑器内容区域 */}
+                        <EditorContent 
+                          editor={editor} 
+                          className="prose max-w-none"
+                          style={{ minHeight: '600px', padding: '10px' }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={handleSaveEdit}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        保存
+                      </button>
+                      <button
+                        onClick={handleCancelEdit}
+                        className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    {getLeafItemContent(selectedChapter) ? (
+                      <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: getLeafItemContent(selectedChapter) || '' }}>
+                      </div>
+                    ) : (
+                      <div className="text-gray-400 italic py-4">
+                        <DocumentTextIcon className="inline w-4 h-4 mr-2" />
+                        {progress.generating.has(selectedChapter) ? (
+                          <span className="text-blue-600">正在生成内容...</span>
+                        ) : (
+                          '内容待生成...'
+                        )}
+                      </div>
+                    )}
+                    {/* 编辑按钮 */}
+                    {getLeafItemContent(selectedChapter) && !progress.generating.has(selectedChapter) && (
+                      <button
+                        onClick={() => handleStartEdit(selectedChapter, getLeafItemContent(selectedChapter) || '')}
+                        className="mt-2 inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                        编辑
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-gray-500 italic py-8 text-center">
+                <DocumentTextIcon className="inline w-8 h-8 mr-2 text-gray-400" />
+                <p>请从左侧目录中选择一个章节</p>
+              </div>
+            )}
+          </div>
+          
+          {/* 右侧知识素材面板 */}
+          <div className="w-64 bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">默认知识库</h2>
+            <div className="mb-4">
+              <input
+                type="text"
+                placeholder="搜索图片或表格"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <button className="w-full py-2 text-sm text-center text-white bg-purple-500 rounded-md hover:bg-purple-600">
+              插入选中素材 (0)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  
+  // 根据章节ID获取章节标题
+  const getChapterTitle = (chapterId: string): string => {
+    const findChapter = (items: OutlineItem[]): OutlineItem | null => {
+      for (const item of items) {
+        if (item.id === chapterId) return item;
+        if (item.children) {
+          const found = findChapter(item.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    
+    const chapter = findChapter(outlineData?.outline || []);
+    return chapter ? chapter.title : '未知章节';
+  };
+  
+  // 生成单个章节内容
+  const handleGenerateContentForItem = async (item: OutlineItem) => {
+    if (!outlineData) return;
+    await generateItemContent(item, outlineData.project_overview || '');
+  };
+  
+  // 获取总字数
+  const getTotalWordCount = (): number => {
+    let totalCount = 0;
+    leafItems.forEach(item => {
+      if (item.content) {
+        // 简单的字数统计，实际项目中可能需要更准确的实现
+        totalCount += item.content.replace(/\s+/g, ' ').trim().length;
+      }
+    });
+    return totalCount;
+  };
+  
+  // 目录展开状态管理
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  
+  // 初始化时展开所有一级目录
+  useEffect(() => {
+    if (outlineData?.outline) {
+      const initialExpanded = new Set<string>();
+      outlineData.outline.forEach(item => {
+        initialExpanded.add(item.id);
+      });
+      setExpandedItems(initialExpanded);
+    }
+  }, [outlineData?.outline]);
 
   // 生成单个章节内容
   const generateItemContent = async (item: OutlineItem, projectOverview: string): Promise<OutlineItem> => {
@@ -215,10 +785,39 @@ const ContentEdit: React.FC<ContentEditProps> = ({
             try {
               const parsed = JSON.parse(data);
               
-              if (parsed.status === 'streaming' && parsed.full_content) {
-                // 实时更新内容
-                content = parsed.full_content;
-                updatedItem.content = content;
+              if ((parsed.status === 'streaming' && parsed.full_content) || (parsed.status === 'completed' && parsed.content)) {
+                // 获取新内容
+                const newContent = parsed.status === 'streaming' ? parsed.full_content : parsed.content;
+                
+                // 确保内容是有效的HTML
+                let safeContent = newContent;
+                try {
+                  // 如果内容包含HTML标签，确保它是有效的
+                  if (safeContent && (safeContent.includes('<') || safeContent.includes('>'))) {
+                    // 使用DOMParser检查HTML的有效性
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(safeContent, 'text/html');
+                    
+                    // 如果解析失败，使用纯文本内容
+                    if (doc.querySelector('parsererror')) {
+                      safeContent = newContent
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+                    }
+                  }
+                } catch (error) {
+                  console.error('解析HTML内容失败:', error);
+                  // 出错时使用纯文本内容
+                  safeContent = newContent
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                }
+                
+                // 更新内容
+                content = safeContent;
+                updatedItem.content = safeContent;
                 
                 // 实时更新叶子节点数据以触发重新渲染
                 setLeafItems(prevItems => {
@@ -229,9 +828,6 @@ const ContentEdit: React.FC<ContentEditProps> = ({
                   }
                   return newItems;
                 });
-              } else if (parsed.status === 'completed' && parsed.content) {
-                content = parsed.content;
-                updatedItem.content = content;
               } else if (parsed.status === 'error') {
                 throw new Error(parsed.message);
               }
@@ -305,8 +901,39 @@ const ContentEdit: React.FC<ContentEditProps> = ({
       // 更新状态
       setLeafItems(updatedItems);
       
-      // 这里需要更新整个outlineData，但由于我们只有props，需要通过回调通知父组件
-      // 暂时只更新本地状态
+      // 如果当前有选中的章节，更新editContent，确保UI立即反映变化
+      if (selectedChapter) {
+        const selectedItem = updatedItems.find(item => item.id === selectedChapter);
+        if (selectedItem?.content) {
+          setEditContent(selectedItem.content);
+        }
+      }
+      
+      // 更新整个outlineData，确保UI能够正确显示生成的内容
+      if (outlineData && updateOutline) {
+        // 递归更新outlineData中的内容
+        const updateOutlineContent = (items: OutlineItem[]): OutlineItem[] => {
+          return items.map(item => {
+            const updatedItem = updatedItems.find(ui => ui.id === item.id);
+            if (updatedItem) {
+              return updatedItem;
+            } else if (item.children && item.children.length > 0) {
+              return {
+                ...item,
+                children: updateOutlineContent(item.children)
+              };
+            } else {
+              return item;
+            }
+          });
+        };
+        
+        const updatedOutline = updateOutlineContent(outlineData.outline || []);
+        updateOutline({
+          ...outlineData,
+          outline: updatedOutline
+        });
+      }
       
     } catch (error) {
       console.error('生成内容时出错:', error);
@@ -318,138 +945,19 @@ const ContentEdit: React.FC<ContentEditProps> = ({
 
   // 获取叶子节点的最新内容（包括生成的内容）
   const getLatestContent = (item: OutlineItem): string => {
-    if (!item.children || item.children.length === 0) {
-      // 叶子节点，从 leafItems 获取最新内容
-      const leafItem = leafItems.find(leaf => leaf.id === item.id);
-      return leafItem?.content || item.content || '';
+    if (item.id === editingItemId) {
+      return editContent;
+    } else if (item.children && item.children.length > 0) {
+      // 递归获取第一个有内容的子项
+      for (const child of item.children) {
+        const content = getLatestContent(child);
+        if (content) {
+          return content;
+        }
+      }
+      return '';
     }
     return item.content || '';
-  };
-
-  // 解析Markdown内容为Word段落
-  const parseMarkdownToWord = (content: string) => {
-    const paragraphs = [];
-    const lines = content.split('\n');
-    let i = 0;
-    
-    while (i < lines.length) {
-      const line = lines[i].trim();
-      
-      if (!line) {
-        i++;
-        continue;
-      }
-      
-      // 处理列表项
-      if (line.startsWith('- ') || line.startsWith('* ') || /^\d+\.\s/.test(line)) {
-        const listItems = [];
-        while (i < lines.length && (lines[i].trim().startsWith('- ') || lines[i].trim().startsWith('* ') || /^\s*\d+\.\s/.test(lines[i]))) {
-          const listItem = lines[i].trim().replace(/^[-*]\s|^\d+\.\s/, '');
-          if (listItem) {
-            listItems.push(listItem);
-          }
-          i++;
-        }
-        
-        // 为每个列表项创建段落
-        listItems.forEach(item => {
-          paragraphs.push(
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `• ${item}`,
-                  size: 20,
-                }),
-              ],
-              spacing: { after: 100 },
-              indent: { left: 360 }, // 缩进
-            })
-          );
-        });
-        continue;
-      }
-      
-      // 处理表格（简化处理）
-      if (line.includes('|')) {
-        const tableRows = [];
-        while (i < lines.length && lines[i].trim().includes('|')) {
-          const row = lines[i].trim();
-          if (row && !row.match(/^\|?[-\s\|]+\|?$/)) { // 跳过分隔行
-            const cells = row.split('|').map(cell => cell.trim()).filter(cell => cell);
-            if (cells.length > 0) {
-              tableRows.push(cells.join(' | '));
-            }
-          }
-          i++;
-        }
-        
-        // 将表格转换为段落形式
-        tableRows.forEach(row => {
-          paragraphs.push(
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: row,
-                  size: 20,
-                }),
-              ],
-              spacing: { after: 100 },
-              indent: { left: 180 },
-            })
-          );
-        });
-        continue;
-      }
-      
-      // 处理标题
-      if (line.startsWith('#')) {
-        const match = line.match(/^#+/);
-        const level = match ? match[0].length : 1;
-        const text = line.replace(/^#+\s*/, '');
-        paragraphs.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: text,
-                bold: true,
-                size: level === 1 ? 24 : level === 2 ? 22 : 20,
-              }),
-            ],
-            spacing: { before: 200, after: 100 },
-          })
-        );
-        i++;
-        continue;
-      }
-      
-      // 处理普通段落
-      const paragraph = [];
-      while (i < lines.length && lines[i].trim() && 
-             !lines[i].trim().startsWith('-') && 
-             !lines[i].trim().startsWith('*') && 
-             !lines[i].trim().includes('|') && 
-             !lines[i].trim().startsWith('#')) {
-        paragraph.push(lines[i].trim());
-        i++;
-      }
-      
-      if (paragraph.length > 0) {
-        const text = paragraph.join(' ').replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').replace(/`(.*?)`/g, '$1');
-        paragraphs.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: text,
-                size: 20,
-              }),
-            ],
-            spacing: { after: 200 },
-          })
-        );
-      }
-    }
-    
-    return paragraphs;
   };
 
   // 滚动到页面顶部
@@ -592,7 +1100,7 @@ const ContentEdit: React.FC<ContentEditProps> = ({
 
             {/* 目录结构和内容 */}
             <div className="space-y-8">
-              {renderOutline(outlineData.outline)}
+              {renderOutline()}
             </div>
           </div>
         </div>

@@ -91,10 +91,12 @@ const OutlineEdit: React.FC<OutlineEditProps> = ({
         const chunk = decoder.decode(value, { stream: true });
         const lines = chunk.split('\n');
 
+        let doneProcessing = false;
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6);
             if (data === '[DONE]') {
+              doneProcessing = true;
               break;
             }
             try {
@@ -109,11 +111,25 @@ const OutlineEdit: React.FC<OutlineEditProps> = ({
             }
           }
         }
+        if (doneProcessing) break;
       }
 
       // 解析最终结果
       try {
+        console.log('原始响应数据:', result);
+        
+        if (!result) {
+          throw new Error('响应数据为空');
+        }
+        
         const outlineJson = JSON.parse(result);
+        console.log('解析后的目录数据:', outlineJson);
+        
+        // 验证数据格式
+        if (!outlineJson || !outlineJson.outline) {
+          throw new Error('目录数据格式不正确，缺少outline字段');
+        }
+        
         onOutlineGenerated(outlineJson);
         setMessage({ type: 'success', text: '目录结构生成完成' });
         setStreamingContent(''); // 清空流式内容
@@ -132,7 +148,8 @@ const OutlineEdit: React.FC<OutlineEditProps> = ({
         setExpandedItems(allIds);
         
       } catch (parseError) {
-        throw new Error('解析目录结构失败');
+        console.error('目录解析失败:', parseError);
+        throw new Error(`解析目录结构失败: ${(parseError as Error).message}`);
       }
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message || '目录生成失败' });

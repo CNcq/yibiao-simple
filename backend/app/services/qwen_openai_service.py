@@ -27,7 +27,8 @@ class OpenAIService:
 
     def __init__(self):
         config = config_manager.load_config()
-        self.api_key = config.get("api_key") or os.getenv("DASHSCOPE_API_KEY")
+        # self.api_key = config.get("api_key") or os.getenv("DASHSCOPE_API_KEY")
+        self.api_key = config.get('api_key') or 'sk-eb33ccdad18a4e50b1b4d530a7b0cef4'
         # 去掉尾部空格，避免 404
         self.base_url = (config.get("base_url") or "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
         self.model_name = config.get("model_name", "qwen-plus")  # 默认千问模型
