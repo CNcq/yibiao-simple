@@ -24,6 +24,7 @@ import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TextAlign from '@tiptap/extension-text-align';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Markdown } from 'tiptap-markdown';
 
 import { OutlineData, OutlineItem } from '../types';
 import { DocumentTextIcon, PlayIcon, DocumentArrowDownIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowUpIcon } from '@heroicons/react/24/outline';
@@ -76,6 +77,27 @@ const ContentEdit: React.FC<ContentEditProps> = ({
       }
     });
     return leaves;
+  }, []);
+
+  // 从outlineData生成全文内容
+  const generateFullContent = useCallback((items: OutlineItem[]): string => {
+    let content = '';
+    items.forEach(item => {
+      // 添加章节标题
+      const level = item.id.split('.').length;
+      content += `${'#'.repeat(level)} ${item.id} ${item.title}\n\n`;
+      
+      // 添加章节内容
+      if (item.content) {
+        content += `${item.content}\n\n`;
+      }
+      
+      // 递归处理子章节
+      if (item.children && item.children.length > 0) {
+        content += generateFullContent(item.children);
+      }
+    });
+    return content;
   }, []);
 
   // 获取章节的上级章节信息
@@ -162,10 +184,44 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     if (!outlineData || !updateOutline) return;
 
     // 确认删除
-    if (!window.confirm('确定要删除这个目录吗？')) {
+    if (!window.confirm('确定要删除这个目录及其所有子目录和内容吗？')) {
       return;
     }
 
+    // 收集所有需要删除的节点ID（包括当前节点和所有子节点）
+    const collectNodeIdsToDelete = (items: OutlineItem[]): string[] => {
+      let idsToDelete: string[] = [];
+      
+      const collectIds = (node: OutlineItem): string[] => {
+        let result: string[] = [node.id];
+        
+        // 递归收集所有子节点ID
+        if (node.children && node.children.length > 0) {
+          node.children.forEach(child => {
+            result = result.concat(collectIds(child));
+          });
+        }
+        
+        return result;
+      };
+      
+      // 遍历所有节点，找到目标节点并收集其所有子节点ID
+      items.forEach(item => {
+        if (item.id === chapterId) {
+          // 找到目标节点，收集其所有子节点ID
+          idsToDelete = collectIds(item);
+        } else if (item.children && item.children.length > 0) {
+          // 递归检查子节点
+          idsToDelete = idsToDelete.concat(collectNodeIdsToDelete(item.children));
+        }
+      });
+      
+      return idsToDelete;
+    };
+
+    const idsToDelete = collectNodeIdsToDelete(outlineData.outline);
+
+    // 删除目录节点
     const deleteChapter = (items: OutlineItem[]): OutlineItem[] => {
       return items.filter(item => {
         if (item.id === chapterId) {
@@ -182,11 +238,19 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     };
 
     const updatedOutline = deleteChapter(outlineData.outline);
+    
+    // 删除对应的内容是不需要单独处理的，因为内容直接存储在OutlineItem的content属性中
+    // 当节点从outline中删除后，其包含的content也会随之删除
     updateOutline({ ...outlineData, outline: updatedOutline });
 
-    // 如果删除的是当前选中的章节，清除选中状态
-    if (selectedChapter === chapterId) {
+    // 如果删除的是当前选中的章节或其任何子章节，清除选中状态
+    if (selectedChapter && idsToDelete.includes(selectedChapter)) {
       onChapterSelect('');
+    }
+
+    // 如果正在编辑的章节被删除，退出编辑模式
+    if (editingItemId && idsToDelete.includes(editingItemId)) {
+      setEditingItemId(null);
     }
   };
 
@@ -251,6 +315,7 @@ const ContentEdit: React.FC<ContentEditProps> = ({
       Placeholder.configure({
         placeholder: '请输入内容...',
       }),
+      Markdown,
     ],
     content: '',
     onUpdate: ({ editor }) => {
@@ -271,6 +336,14 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     },
   });
 
+  // 当outlineData或leafItems变化且处于全文编辑模式时，自动更新编辑器内容
+  useEffect(() => {
+    if (editingItemId === 'full_content' && editor && outlineData) {
+      const fullContent = generateFullContent(outlineData.outline || []);
+      editor.commands.setContent(fullContent);
+    }
+  }, [outlineData, leafItems, editingItemId, editor, generateFullContent]);
+
   // 开始编辑内容
   const handleStartEdit = (itemId: string, currentContent: string) => {
     setEditingItemId(itemId);
@@ -280,24 +353,85 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     // 延迟设置编辑器内容，确保编辑器已经初始化
     setTimeout(() => {
       if (editor) {
+        // 使用Markdown扩展增强的setContent方法来解析Markdown内容
         editor.commands.setContent(safeContent);
       }
     }, 0);
+  };
+
+  // 解析全文内容，将其拆分为各个章节
+  const parseFullContent = (content: string): { id: string; title: string; content: string }[] => {
+    const sections: { id: string; title: string; content: string }[] = [];
+    
+    // 使用正则表达式匹配所有章节，包括标题和内容
+    // 匹配模式：#、##、### 等不同级别的章节ID 章节标题
+    const sectionRegex = /(^#+)\s+(\S+)\s+([^\n]+)\n([\s\S]*?)(?=\n#+\s+\S+\s+[^\n]+\n|$)/g;
+    
+    let match;
+    while ((match = sectionRegex.exec(content)) !== null) {
+      const id = match[2];
+      const title = match[3];
+      const contentPart = match[4] ? match[4].trim() : '';
+      
+      sections.push({ id, title, content: contentPart });
+    }
+    
+    return sections;
   };
 
   // 保存编辑的内容
   const handleSaveEdit = () => {
     if (!editingItemId) return;
 
-    // 更新本地状态
-    setLeafItems(prevItems => {
-      return prevItems.map(item => {
-        if (item.id === editingItemId) {
-          return { ...item, content: editContent };
+    if (editingItemId === 'full_content') {
+      // 全文编辑模式下，将内容拆分为各个章节
+      const sections = parseFullContent(editContent);
+      
+      // 更新本地状态
+      const updatedLeafItems = [...leafItems];
+      sections.forEach(section => {
+        const index = updatedLeafItems.findIndex(item => item.id === section.id);
+        if (index !== -1) {
+          updatedLeafItems[index] = { ...updatedLeafItems[index], content: section.content };
         }
-        return item;
       });
-    });
+      setLeafItems(updatedLeafItems);
+      
+      // 更新outlineData
+      if (outlineData && updateOutline) {
+        const updateOutlineContent = (items: OutlineItem[]): OutlineItem[] => {
+          return items.map(item => {
+            const updatedItem = updatedLeafItems.find(ui => ui.id === item.id);
+            if (updatedItem) {
+              return updatedItem;
+            } else if (item.children && item.children.length > 0) {
+              return {
+                ...item,
+                children: updateOutlineContent(item.children)
+              };
+            } else {
+              return item;
+            }
+          });
+        };
+        
+        const updatedOutline = updateOutlineContent(outlineData.outline || []);
+        updateOutline({
+          ...outlineData,
+          outline: updatedOutline
+        });
+      }
+    } else {
+      // 单章节编辑模式下，仅更新当前章节
+      setLeafItems(prevItems => {
+        return prevItems.map(item => {
+          if (item.id === editingItemId) {
+            return { ...item, content: editContent };
+          }
+          return item;
+        });
+      });
+    }
 
     // 退出编辑模式
     setEditingItemId(null);
@@ -348,7 +482,35 @@ const ContentEdit: React.FC<ContentEditProps> = ({
             {/* 节点标题 */}
             <div 
               className={`text-sm font-medium flex-1 cursor-pointer ${selectedChapter === item.id ? 'text-blue-600' : 'text-gray-900 hover:text-blue-500'}`}
-              onClick={() => onChapterSelect(item.id)}
+              onClick={() => {
+                // 进入全文编辑模式
+                setEditingItemId('full_content');
+                
+                // 延迟设置编辑器内容和光标位置，确保编辑器已经初始化
+                setTimeout(() => {
+                  if (editor && outlineData) {
+                    const fullContent = generateFullContent(outlineData.outline || []);
+                    
+                    // 设置编辑器内容
+                    editor.commands.setContent(fullContent);
+                    
+                    // 定位到对应章节标题的末尾
+                    const chapterTitle = `${item.id} ${item.title}`;
+                    const content = editor.getHTML();
+                    const titleRegex = new RegExp(`(<h[1-3]>[^<]*${chapterTitle}[^<]*<\/h[1-3]>)`, 'i');
+                    const match = content.match(titleRegex);
+                    
+                    if (match) {
+                      // 计算标题的结束位置
+                      const titlePosition = content.indexOf(match[1]) + match[1].length;
+                      
+                      // 将光标移动到标题末尾
+                      editor.commands.setTextSelection(titlePosition);
+                      editor.commands.focus();
+                    }
+                  }
+                }, 0);
+              }}
             >
               {item.id} {item.title}
             </div>
@@ -420,21 +582,7 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     if (!outlineData?.outline) return <div>加载中...</div>;
     
     return (
-      <div className="max-w-7xl mx-auto bg-white p-6 rounded-lg shadow-md">
-        {/* 顶部导航 */}
-        <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
-          <h1 className="text-xl font-bold text-gray-900">标书名称</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">当前字数: {getTotalWordCount()}</span>
-            <button
-              onClick={handleGenerateContent}
-              disabled={isGenerating}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${isGenerating ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
-            >
-              生成全文
-            </button>
-          </div>
-        </div>
+      <div className="w-full max-w-full mx-auto bg-white p-6 rounded-lg shadow-md">
         
         {/* 主要内容区域 */}
         <div className="flex gap-6">
@@ -447,14 +595,14 @@ const ContentEdit: React.FC<ContentEditProps> = ({
           {/* 右侧编辑区域 */}
           <div className="flex-1 bg-white p-4 rounded-lg border border-gray-200">
             {/* 当前选中的章节内容 */}
-            {selectedChapter ? (
+            {selectedChapter || editingItemId === 'full_content' ? (
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                  {getChapterTitle(selectedChapter)}
+                  {editingItemId === 'full_content' ? '全文编辑' : getChapterTitle(selectedChapter || '')}
                 </h2>
                 
-                {/* 编辑模式 */}
-                {editingItemId === selectedChapter ? (
+                {/* 编辑模式 - 支持单章节编辑和全文编辑 */}
+                {editingItemId === selectedChapter || editingItemId === 'full_content' ? (
                   <div>
                     <div className="mb-4">
                       <div className="border border-gray-200 rounded-md overflow-hidden">
@@ -633,13 +781,13 @@ const ContentEdit: React.FC<ContentEditProps> = ({
                   </div>
                 ) : (
                   <div>
-                    {getLeafItemContent(selectedChapter) ? (
+                    {selectedChapter && getLeafItemContent(selectedChapter) ? (
                       <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: getLeafItemContent(selectedChapter) || '' }}>
                       </div>
                     ) : (
                       <div className="text-gray-400 italic py-4">
                         <DocumentTextIcon className="inline w-4 h-4 mr-2" />
-                        {progress.generating.has(selectedChapter) ? (
+                        {selectedChapter && progress.generating.has(selectedChapter) ? (
                           <span className="text-blue-600">正在生成内容...</span>
                         ) : (
                           '内容待生成...'
@@ -647,7 +795,7 @@ const ContentEdit: React.FC<ContentEditProps> = ({
                       </div>
                     )}
                     {/* 编辑按钮 */}
-                    {getLeafItemContent(selectedChapter) && !progress.generating.has(selectedChapter) && (
+                    {selectedChapter && getLeafItemContent(selectedChapter) && !progress.generating.has(selectedChapter) && (
                       <button
                         onClick={() => handleStartEdit(selectedChapter, getLeafItemContent(selectedChapter) || '')}
                         className="mt-2 inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -828,6 +976,12 @@ const ContentEdit: React.FC<ContentEditProps> = ({
                   }
                   return newItems;
                 });
+                
+                // 实时更新编辑器内容（如果处于全文编辑模式）
+                if (editingItemId === 'full_content' && editor && outlineData) {
+                  const fullContent = generateFullContent(outlineData.outline || []);
+                  editor.commands.setContent(fullContent);
+                }
               } else if (parsed.status === 'error') {
                 throw new Error(parsed.message);
               }
@@ -858,6 +1012,20 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     }
   };
 
+  // 生成目录结构
+  const generateTableOfContents = (items: OutlineItem[], level: number = 1): string => {
+    let toc = '';
+    for (const item of items) {
+      // 根据层级添加对应的Markdown标题样式
+      const headingMarkers = '#'.repeat(level);
+      toc += `${headingMarkers} ${item.id} ${item.title}\n`;
+      if (item.children && item.children.length > 0) {
+        toc += generateTableOfContents(item.children, level + 1);
+      }
+    }
+    return toc;
+  };
+
   // 开始生成所有内容
   const handleGenerateContent = async () => {
     if (!outlineData || leafItems.length === 0) return;
@@ -872,6 +1040,19 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     });
 
     try {
+      // 立即进入全文编辑模式
+      const initialFullContent = generateFullContent(outlineData.outline || []);
+      setEditContent(initialFullContent);
+      setEditingItemId('full_content'); // 使用特殊ID表示全文编辑模式
+      
+      // 延迟设置初始编辑器内容，确保编辑器已经初始化
+      setTimeout(() => {
+        if (editor) {
+          // 使用Markdown扩展增强的setContent方法来解析Markdown内容
+          editor.commands.setContent(initialFullContent);
+        }
+      }, 0);
+      
       // 使用5个并发线程生成内容
       const concurrency = 5;
       const updatedItems = [...leafItems];
@@ -1010,7 +1191,7 @@ const ContentEdit: React.FC<ContentEditProps> = ({
 
   if (!outlineData) {
     return (
-      <div className="max-w-6xl mx-auto">
+      <div className="w-full max-w-full mx-auto">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="text-center py-12">
             <DocumentTextIcon className="mx-auto h-12 w-12 text-gray-400" />
@@ -1027,7 +1208,7 @@ const ContentEdit: React.FC<ContentEditProps> = ({
   const completedItems = leafItems.filter(item => item.content).length;
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="w-full max-w-full mx-auto">
       {/* 顶部工具栏 */}
       <div className="bg-white rounded-lg shadow mb-6">
         <div className="px-6 py-4 border-b border-gray-200">

@@ -1,7 +1,7 @@
 /**
  * 主应用组件
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppState } from './hooks/useAppState';
 import ConfigPanel from './components/ConfigPanel';
 import StepBar from './components/StepBar';
@@ -11,6 +11,7 @@ import ContentEdit from './pages/ContentEdit';
 
 
 function App() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const {
     state,
     updateConfig,
@@ -64,13 +65,25 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* 左侧配置面板 */}
-      <ConfigPanel
-        config={state.config}
-        onConfigChange={updateConfig}
-      />
+      <div className={`transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-80'}`}>
+        <ConfigPanel config={state.config} onConfigChange={updateConfig} />
+      </div>
 
-      {/* 主内容区域 */}
-      <div className="flex-1 flex flex-col">
+      {/* 侧边栏切换按钮 - 独立定位，确保始终可见 */}
+      <button
+        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        className={`absolute top-1/2 z-20 flex items-center justify-center transition-all duration-300 ${sidebarCollapsed ? 'left-0' : 'left-80'} -translate-y-1/2`}
+        aria-label={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+      >
+        <div className={`h-16 w-8 ${sidebarCollapsed ? 'rounded-r-full' : 'rounded-l-full'} flex items-center justify-center transition-colors bg-blue-600 shadow-md hover:bg-blue-700`}>
+          <svg className={`w-5 h-5 text-white transition-transform duration-300 ${sidebarCollapsed ? 'rotate-0' : 'rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </button>
+
+      {/* 主内容区域 - 利用flex布局自动扩展 */}
+      <div className="flex-1 flex flex-col transition-all duration-300 ease-in-out">
         {/* 步骤导航 */}
         <div className="bg-white shadow-sm px-6">
           <StepBar steps={steps} currentStep={state.currentStep} />

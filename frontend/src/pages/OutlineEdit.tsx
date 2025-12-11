@@ -233,10 +233,41 @@ const OutlineEdit: React.FC<OutlineEditProps> = ({
   const deleteItem = (itemId: string) => {
     if (!outlineData) return;
 
-    if (window.confirm('确定要删除这个目录项吗？')) {
+    // 收集要删除的所有节点ID（当前节点和所有子节点）
+    const collectNodeIdsToDelete = (items: OutlineItem[], targetId: string): string[] => {
+      const collectIds = (item: OutlineItem): string[] => {
+        let ids: string[] = [item.id];
+        if (item.children && item.children.length > 0) {
+          for (const child of item.children) {
+            ids = [...ids, ...collectIds(child)];
+          }
+        }
+        return ids;
+      };
+
+      let allIds: string[] = [];
+      for (const item of items) {
+        if (item.id === targetId) {
+          allIds = collectIds(item);
+          break;
+        }
+        if (item.children && item.children.length > 0) {
+          const childIds = collectNodeIdsToDelete(item.children, targetId);
+          if (childIds.length > 0) {
+            allIds = childIds;
+            break;
+          }
+        }
+      }
+      return allIds;
+    };
+
+    const nodeIdsToDelete = collectNodeIdsToDelete(outlineData.outline, itemId);
+
+    if (window.confirm('确定要删除这个目录及其所有子目录和内容吗？')) {
       const deleteFromItems = (items: OutlineItem[]): OutlineItem[] => {
         return items.filter(item => {
-          if (item.id === itemId) {
+          if (nodeIdsToDelete.includes(item.id)) {
             return false;
           }
           if (item.children) {
@@ -250,6 +281,8 @@ const OutlineEdit: React.FC<OutlineEditProps> = ({
       const filteredItems = deleteFromItems(outlineData.outline);
       const reorderedItems = reorderItems(filteredItems);
 
+      // 删除对应的内容是不需要单独处理的，因为内容直接存储在OutlineItem的content属性中
+      // 当节点从outline中删除后，其包含的content也会随之删除
       const updatedData = {
         ...outlineData,
         outline: reorderedItems
