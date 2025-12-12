@@ -84,6 +84,7 @@ class ChapterContentRequest(BaseModel):
     parent_chapters: Optional[List[Dict[str, Any]]] = Field(None, description="上级章节列表")
     sibling_chapters: Optional[List[Dict[str, Any]]] = Field(None, description="同级章节列表")
     project_overview: str = Field("", description="项目概述")
+    prompt: Optional[str] = Field(None, description="章节自定义提示词")
 
 
 class ErrorResponse(BaseModel):

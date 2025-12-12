@@ -106,6 +106,7 @@ class OpenAIService:
             parent_chapters: list = None,
             sibling_chapters: list = None,
             project_overview: str = "",
+            prompt: str = None,
     ) -> AsyncGenerator[str, None]:
         try:
             chapter_id = chapter.get("id", "unknown")
@@ -134,12 +135,17 @@ class OpenAIService:
                         context_info += f"- {s.get('id')} {s.get('title')}\n  {s.get('description', '')}\n"
 
             project_info = f"项目概述信息：\n{project_overview}\n\n" if project_overview.strip() else ""
+            
+            # 章节自定义提示词
+            custom_prompt = f"\n\n自定义提示词：\n{prompt}\n"
+            
             user_prompt = f"""请为以下标书章节生成具体内容：
 
 {project_info}{context_info}当前章节信息：
 章节ID: {chapter_id}
 章节标题: {chapter_title}
 章节描述: {chapter_description}
+{custom_prompt if prompt else ''}
 
 请根据项目概述信息和上述章节层级关系，生成详细的专业内容，确保与上级章节的内容逻辑相承，同时避免与同级章节内容重复，突出本章节的独特性和技术方案的优势。"""
 

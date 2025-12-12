@@ -14,6 +14,7 @@ export interface OutlineItem {
   description: string;
   children?: OutlineItem[];
   content?: string;
+  prompt?: string;
 }
 
 export interface OutlineData {

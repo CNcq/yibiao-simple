@@ -62,9 +62,9 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     generating: new Set<string>()
   });
   const [leafItems, setLeafItems] = useState<OutlineItem[]>([]);
-  const [showScrollToTop, setShowScrollToTop] = useState(false);
-  const [editingItemId, setEditingItemId] = useState<string | null>(null); // 当前正在编辑的章节ID
-  const [editContent, setEditContent] = useState<string>(''); // 编辑模式下的内容
+  const [showScrollToTop, setShowScrollToTop] = useState(false);// 编辑模式状态
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState<string>('');
 
   // 收集所有叶子节点
   const collectLeafItems = useCallback((items: OutlineItem[]): OutlineItem[] => {
@@ -344,6 +344,8 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     }
   }, [outlineData, leafItems, editingItemId, editor, generateFullContent]);
 
+
+
   // 开始编辑内容
   const handleStartEdit = (itemId: string, currentContent: string) => {
     setEditingItemId(itemId);
@@ -431,6 +433,35 @@ const ContentEdit: React.FC<ContentEditProps> = ({
           return item;
         });
       });
+      
+      // 更新outlineData中的内容和提示词
+      if (outlineData && updateOutline) {
+        const updateOutlineContent = (items: OutlineItem[]): OutlineItem[] => {
+          return items.map(item => {
+            if (item.id === editingItemId) {
+              // 获取包含最新提示词的item
+              const updatedItem = leafItems.find(ui => ui.id === item.id);
+              if (updatedItem) {
+                return { ...updatedItem, content: editContent };
+              }
+              return { ...item, content: editContent };
+            } else if (item.children && item.children.length > 0) {
+              return {
+                ...item,
+                children: updateOutlineContent(item.children)
+              };
+            } else {
+              return item;
+            }
+          });
+        };
+        
+        const updatedOutline = updateOutlineContent(outlineData.outline || []);
+        updateOutline({
+          ...outlineData,
+          outline: updatedOutline
+        });
+      }
     }
 
     // 退出编辑模式
@@ -483,33 +514,11 @@ const ContentEdit: React.FC<ContentEditProps> = ({
             <div 
               className={`text-sm font-medium flex-1 cursor-pointer ${selectedChapter === item.id ? 'text-blue-600' : 'text-gray-900 hover:text-blue-500'}`}
               onClick={() => {
-                // 进入全文编辑模式
-                setEditingItemId('full_content');
+                // 先设置选中的章节
+                onChapterSelect(item.id);
                 
-                // 延迟设置编辑器内容和光标位置，确保编辑器已经初始化
-                setTimeout(() => {
-                  if (editor && outlineData) {
-                    const fullContent = generateFullContent(outlineData.outline || []);
-                    
-                    // 设置编辑器内容
-                    editor.commands.setContent(fullContent);
-                    
-                    // 定位到对应章节标题的末尾
-                    const chapterTitle = `${item.id} ${item.title}`;
-                    const content = editor.getHTML();
-                    const titleRegex = new RegExp(`(<h[1-3]>[^<]*${chapterTitle}[^<]*<\/h[1-3]>)`, 'i');
-                    const match = content.match(titleRegex);
-                    
-                    if (match) {
-                      // 计算标题的结束位置
-                      const titlePosition = content.indexOf(match[1]) + match[1].length;
-                      
-                      // 将光标移动到标题末尾
-                      editor.commands.setTextSelection(titlePosition);
-                      editor.commands.focus();
-                    }
-                  }
-                }, 0);
+                // 进入单章节编辑模式
+                handleStartEdit(item.id, getLeafItemContent(item.id) || '');
               }}
             >
               {item.id} {item.title}
@@ -604,6 +613,29 @@ const ContentEdit: React.FC<ContentEditProps> = ({
                 {/* 编辑模式 - 支持单章节编辑和全文编辑 */}
                 {editingItemId === selectedChapter || editingItemId === 'full_content' ? (
                   <div>
+                    {/* 提示词输入区域 - 仅在单章节编辑模式下显示 */}
+                    {editingItemId !== 'full_content' && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">章节提示词</label>
+                        <textarea 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                          rows={3} 
+                          placeholder="输入提示词以指导该章节的内容生成..."
+                          value={editingItemId ? (leafItems.find(item => item.id === editingItemId)?.prompt || '') : ''}
+                          onChange={(e) => {
+                            const newPrompt = e.target.value;
+                            setLeafItems(prevItems => {
+                              return prevItems.map(item => {
+                                if (item.id === editingItemId) {
+                                  return { ...item, prompt: newPrompt };
+                                }
+                                return item;
+                              });
+                            });
+                          }}
+                        />
+                      </div>
+                    )}
                     <div className="mb-4">
                       <div className="border border-gray-200 rounded-md overflow-hidden">
                         {/* 编辑器工具栏 */}
@@ -777,6 +809,7 @@ const ContentEdit: React.FC<ContentEditProps> = ({
                       >
                         取消
                       </button>
+
                     </div>
                   </div>
                 ) : (
@@ -794,25 +827,41 @@ const ContentEdit: React.FC<ContentEditProps> = ({
                         )}
                       </div>
                     )}
-                    {/* 编辑按钮 */}
+                    {/* 操作按钮组 */}
                     {selectedChapter && getLeafItemContent(selectedChapter) && !progress.generating.has(selectedChapter) && (
-                      <button
-                        onClick={() => handleStartEdit(selectedChapter, getLeafItemContent(selectedChapter) || '')}
-                        className="mt-2 inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                        编辑
-                      </button>
+                      <div className="flex space-x-2 mt-2">
+                        <button
+                          onClick={() => handleStartEdit(selectedChapter, getLeafItemContent(selectedChapter) || '')}
+                          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingItemId(null);
+                            onChapterSelect(''); // 清除选中的章节
+                          }}
+                          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                          全局预览
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
               </div>
             ) : (
-              <div className="text-gray-500 italic py-8 text-center">
-                <DocumentTextIcon className="inline w-8 h-8 mr-2 text-gray-400" />
-                <p>请从左侧目录中选择一个章节</p>
+              // 默认状态：提示选择章节
+              <div className="text-gray-400 italic py-4">
+                <DocumentTextIcon className="inline w-4 h-4 mr-2" />
+                请从左侧目录中选择一个章节
               </div>
             )}
           </div>
@@ -856,7 +905,10 @@ const ContentEdit: React.FC<ContentEditProps> = ({
   // 生成单个章节内容
   const handleGenerateContentForItem = async (item: OutlineItem) => {
     if (!outlineData) return;
-    await generateItemContent(item, outlineData.project_overview || '');
+    
+    // 从leafItems中获取包含最新提示词的item对象
+    const updatedItem = leafItems.find(leafItem => leafItem.id === item.id) || item;
+    await generateItemContent(updatedItem, outlineData.project_overview || '');
   };
   
   // 获取总字数
@@ -905,7 +957,8 @@ const ContentEdit: React.FC<ContentEditProps> = ({
         chapter: item,
         parent_chapters: parentChapters,
         sibling_chapters: siblingChapters,
-        project_overview: projectOverview
+        project_overview: projectOverview,
+        prompt: item.prompt
       };
 
       const response = await contentApi.generateChapterContentStream(request);
@@ -1266,10 +1319,31 @@ const ContentEdit: React.FC<ContentEditProps> = ({
       <div className="bg-white rounded-lg shadow">
         <div className="p-8">
           <div className="prose max-w-none">
-            {/* 文档标题 */}
-            <h1 className="text-3xl font-bold text-gray-900 mb-8">
-              {outlineData.project_name || '投标技术文件'}
-            </h1>
+            {/* 文档标题和全文编辑按钮 */}
+            <div className="flex items-center justify-between mb-8">
+              <h1 className="text-3xl font-bold text-gray-900">
+                {outlineData.project_name || '投标技术文件'}
+              </h1>
+              <button
+                onClick={() => {
+                  // 进入全文编辑模式
+                  const fullContent = generateFullContent(outlineData.outline || []);
+                  setEditContent(fullContent);
+                  setEditingItemId('full_content'); // 使用特殊ID表示全文编辑模式
+                  onChapterSelect(''); // 清除选中的章节
+                  
+                  // 延迟设置编辑器内容，确保编辑器已经初始化
+                  setTimeout(() => {
+                    if (editor) {
+                      editor.commands.setContent(fullContent);
+                    }
+                  }, 0);
+                }}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                全文编辑
+              </button>
+            </div>
             
             {/* 项目概述 */}
             {outlineData.project_overview && (

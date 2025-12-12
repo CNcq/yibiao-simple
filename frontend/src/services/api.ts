@@ -55,6 +55,7 @@ export interface ChapterContentRequest {
   parent_chapters?: any[];
   sibling_chapters?: any[];
   project_overview: string;
+  prompt?: string;
 }
 
 // 配置相关API
