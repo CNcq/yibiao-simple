@@ -839,19 +839,7 @@ const ContentEdit: React.FC<ContentEditProps> = ({
                           </svg>
                           编辑
                         </button>
-                        <button
-                          onClick={() => {
-                            setEditingItemId(null);
-                            onChapterSelect(''); // 清除选中的章节
-                          }}
-                          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                          全局预览
-                        </button>
+
                       </div>
                     )}
                   </div>
@@ -908,7 +896,56 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     
     // 从leafItems中获取包含最新提示词的item对象
     const updatedItem = leafItems.find(leafItem => leafItem.id === item.id) || item;
-    await generateItemContent(updatedItem, outlineData.project_overview || '');
+    
+    // 生成章节内容
+    const generatedItem = await generateItemContent(updatedItem, outlineData.project_overview || '');
+    
+    // 更新leafItems
+    setLeafItems(prevItems => {
+      const newItems = [...prevItems];
+      const index = newItems.findIndex(i => i.id === generatedItem.id);
+      if (index !== -1) {
+        newItems[index] = generatedItem;
+      }
+      return newItems;
+    });
+    
+    // 更新outlineData，保存生成的内容
+    if (updateOutline) {
+      // 递归更新outlineData中的内容
+      const updateOutlineContent = (items: OutlineItem[]): OutlineItem[] => {
+        return items.map(item => {
+          if (item.id === generatedItem.id) {
+            return generatedItem;
+          } else if (item.children && item.children.length > 0) {
+            return {
+              ...item,
+              children: updateOutlineContent(item.children)
+            };
+          } else {
+            return item;
+          }
+        });
+      };
+      
+      const updatedOutline = updateOutlineContent(outlineData.outline || []);
+      updateOutline({
+        ...outlineData,
+        outline: updatedOutline
+      });
+    }
+    
+    // 自动进入全文预览模式
+    const fullContent = generateFullContent(outlineData.outline || []);
+    setEditContent(fullContent);
+    setEditingItemId('full_content'); // 使用特殊ID表示全文编辑模式
+    
+    // 延迟设置编辑器内容，确保编辑器已经初始化
+    setTimeout(() => {
+      if (editor) {
+        editor.commands.setContent(fullContent);
+      }
+    }, 0);
   };
   
   // 获取总字数
