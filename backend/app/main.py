@@ -8,7 +8,7 @@ import fastapi.middleware.cors
 import starlette.middleware.cors
 
 from .config import settings
-from .routers import config, document, outline, content, search, expand
+from .routers import config, document, outline, content, search, expand, knowledge_base
 
 # 创建FastAPI应用实例
 app = FastAPI(
@@ -33,6 +33,7 @@ app.include_router(outline.router)
 app.include_router(content.router)
 app.include_router(search.router)
 app.include_router(expand.router)
+app.include_router(knowledge_base.router)
 
 # 健康检查端点
 @app.get("/health")
@@ -47,7 +48,8 @@ async def health_check():
 # 静态文件服务（用于服务前端构建文件）
 if os.path.exists("static"):
     # 挂载静态资源文件夹
-    app.mount("/static", StaticFiles(directory="static/static"), name="static")
+    # app.mount("/static", StaticFiles(directory="static/static"), name="static")
+    app.mount("/static", StaticFiles(directory="static"), name="static")
     
     # 处理React应用的路由（SPA路由支持）
     @app.get("/")

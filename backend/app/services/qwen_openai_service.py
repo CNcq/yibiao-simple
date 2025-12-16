@@ -121,7 +121,25 @@ class OpenAIService:
 4. 内容要详细具体，避免空泛的描述
 5. 注意避免与同级章节内容重复，保持内容的独特性和互补性
 6. 直接返回章节内容，不生成标题，不要任何额外说明或格式标记
+7. 可以参考知识库中的相关内容，但要确保生成的内容符合当前章节的需求，不要直接复制知识库内容
 """
+
+            # 搜索知识库获取相关参考资料
+            knowledge_base_content = ""
+            try:
+                from ..services.milvus_service import knowledge_base
+                search_query = f"{chapter_title} {chapter_description} {project_overview[:500]}"
+                search_results = knowledge_base.search(search_query, top_k=3)
+                
+                if search_results:
+                    knowledge_base_content = "知识库参考内容：\n"
+                    for i, result in enumerate(search_results):
+                        knowledge_base_content += f"参考{i+1} (相关性: {result['score']:.2f})：\n"
+                        knowledge_base_content += f"标题: {result['title']}\n"
+                        knowledge_base_content += f"内容: {result['content'][:500]}...\n\n"
+            except Exception as e:
+                # 如果知识库搜索失败，继续生成内容
+                print(f"知识库搜索失败: {str(e)}")
 
             context_info = ""
             if parent_chapters:
@@ -141,13 +159,13 @@ class OpenAIService:
             
             user_prompt = f"""请为以下标书章节生成具体内容：
 
-{project_info}{context_info}当前章节信息：
+{project_info}{context_info}{knowledge_base_content}当前章节信息：
 章节ID: {chapter_id}
 章节标题: {chapter_title}
 章节描述: {chapter_description}
 {custom_prompt if prompt else ''}
 
-请根据项目概述信息和上述章节层级关系，生成详细的专业内容，确保与上级章节的内容逻辑相承，同时避免与同级章节内容重复，突出本章节的独特性和技术方案的优势。"""
+请根据项目概述信息、章节层级关系和知识库参考内容，生成详细的专业内容，确保与上级章节的内容逻辑相承，同时避免与同级章节内容重复，突出本章节的独特性和技术方案的优势。"""
 
             messages = [
                 {"role": "system", "content": system_prompt},

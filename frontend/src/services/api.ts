@@ -3,7 +3,7 @@
  */
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8001';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -156,6 +156,31 @@ export const expandApi = {
       timeout: 300000, // 文件上传专用超时设置：5分钟
     });
   },
+};
+
+// 知识库相关API
+export const knowledgeBaseApi = {
+  // 添加文档
+  addDocuments: (documents: any[]) =>
+    api.post('/api/knowledge-base/documents', documents),
+
+  // 删除文档
+  deleteDocument: (docId: number) =>
+    api.delete(`/api/knowledge-base/documents/${docId}`),
+
+  // 搜索知识库
+  searchKnowledgeBase: (query: string, topK: number = 5) =>
+    api.get('/api/knowledge-base/search', {
+      params: { query, top_k: topK }
+    }),
+
+  // 获取知识库统计信息
+  getKnowledgeBaseStats: () =>
+    api.get('/api/knowledge-base/stats'),
+
+  // 清空知识库
+  clearKnowledgeBase: () =>
+    api.delete('/api/knowledge-base/clear'),
 };
 
 export default api;

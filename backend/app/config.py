@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     # OpenAI默认设置
     default_model: str = "gpt-3.5-turbo"
     
+    # Milvus配置
+    enable_milvus: bool = True
+    milvus_uri: str = "tcp://localhost:19530"  # 标准Milvus使用tcp://host:port，milvus-lite使用本地文件
+    milvus_collection_name: str = "bid_knowledge_base"
+    milvus_index_type: str = "IVF_FLAT"
+    milvus_index_params: dict = {"nlist": 128}
+    milvus_search_params: dict = {"nprobe": 10}
+    
     class Config:
         env_file = ".env"
 
