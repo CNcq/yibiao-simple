@@ -37,7 +37,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt ./
 COPY backend/app ./app
 COPY backend/run.py ./
-COPY backend/configs ./configs
 
 # 安装Python依赖
 RUN pip install --no-cache-dir -r requirements.txt
