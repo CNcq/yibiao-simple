@@ -21,8 +21,10 @@ class UbuntuMilvusTester:
         """初始化测试工具"""
         self.client = None
         self.collection_name = "test_collection"
-        self.database_path = "./milvus_demo.db"  # Milvus Lite数据库文件路径
-        self.milvus_uri = f"sqlite:///{self.database_path}"  # Milvus Lite URI
+        # 确保data目录存在
+        os.makedirs('./data', exist_ok=True)
+        # 使用简单的相对路径URI，不使用绝对路径
+        self.milvus_uri = "sqlite:///./data/milvus.db"  # 相对路径格式
         self.dimension = 128  # 向量维度
     
     def check_environment(self):
@@ -201,10 +203,11 @@ class UbuntuMilvusTester:
                 print(f"✅ 集合 '{self.collection_name}' 删除成功")
             
             # 删除数据库文件（可选）
-            if os.path.exists(self.database_path):
-                print(f"🗑️ 删除数据库文件 '{self.database_path}'...")
-                os.remove(self.database_path)
-                print(f"✅ 数据库文件 '{self.database_path}' 删除成功")
+            database_path = "./data/milvus.db"  # 直接使用数据库文件路径
+            if os.path.exists(database_path):
+                print(f"🗑️ 删除数据库文件 '{database_path}'...")
+                os.remove(database_path)
+                print(f"✅ 数据库文件 '{database_path}' 删除成功")
             
             return True
         except Exception as e:
