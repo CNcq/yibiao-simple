@@ -12,8 +12,8 @@ COPY frontend/postcss.config.js ./
 COPY frontend/public ./public
 COPY frontend/src ./src
 
-# 安装依赖
-RUN npm ci --only=production
+# 安装所有依赖（包括开发依赖，因为构建过程需要）
+RUN npm ci
 
 # 构建前端项目
 RUN npm run build
