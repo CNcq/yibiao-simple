@@ -54,7 +54,7 @@ WORKDIR /app/backend
 
 # 安装系统依赖（仅保留运行时必需的）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl1.1 \
+    libssl3 \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
