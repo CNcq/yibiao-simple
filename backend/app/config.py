@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     
     # Milvus配置
     enable_milvus: bool = True
-    milvus_uri: str = "tcp://localhost:19530"  # 标准Milvus使用tcp://host:port，milvus-lite使用本地文件
+    milvus_uri: str = "tcp://192.168.1.134:19530"  # 使用Milvus Standalone服务器
     milvus_collection_name: str = "bid_knowledge_base"
     milvus_index_type: str = "IVF_FLAT"
     milvus_index_params: dict = {"nlist": 128}
@@ -51,3 +51,5 @@ settings = Settings()
 
 # 确保上传目录存在
 os.makedirs(settings.upload_dir, exist_ok=True)
+
+# Milvus Standalone不需要本地数据目录，数据存储在服务器上

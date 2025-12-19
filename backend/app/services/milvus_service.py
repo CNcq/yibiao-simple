@@ -6,8 +6,7 @@ import os
 import json
 import numpy as np
 from typing import List, Dict, Any, Optional
-from pymilvus import (connections, FieldSchema, CollectionSchema, DataType, 
-                     Collection, utility)
+from pymilvus import connections, utility, Collection, FieldSchema, CollectionSchema, DataType
 from sentence_transformers import SentenceTransformer
 
 # 导入应用配置
@@ -28,25 +27,31 @@ class MilvusKnowledgeBase:
         # Milvus 连接配置
         self.milvus_uri = settings.milvus_uri
         self.collection_name = settings.milvus_collection_name
-        
-        # 连接 Milvus
-        self.connect()
+        self.index_type = settings.milvus_index_type
+        self.index_params = settings.milvus_index_params
+        self.search_params = settings.milvus_search_params
         
         # 初始化嵌入模型
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        
+        # 连接Milvus服务器
+        self.connect()
         
         # 创建集合（如果不存在）
         self.create_collection()
     
     def connect(self):
-        """连接到 Milvus 服务"""
-        try:
-            # 使用配置的URI连接Milvus
-            connections.connect(alias='default', uri=self.milvus_uri)
-            print(f"成功连接到 Milvus: {self.milvus_uri}")
-        except Exception as e:
-            print(f"连接 Milvus 失败: {str(e)}")
-            raise
+        """连接到Milvus服务器"""
+        # 检查是否已存在连接
+        if "default" in connections.list_connections():
+            connections.disconnect("default")
+        
+        # 连接到Milvus服务器
+        connections.connect(
+            alias="default",
+            uri=self.milvus_uri
+        )
+        print(f"成功连接到Milvus服务器: {self.milvus_uri}")
     
     def create_collection(self):
         """创建知识库集合"""
@@ -54,30 +59,31 @@ class MilvusKnowledgeBase:
         # all-MiniLM-L6-v2 的维度是 384
         embedding_dimension = 384
         
-        fields = [
-            FieldSchema(name='id', dtype=DataType.INT64, is_primary=True, auto_id=True),
-            FieldSchema(name='content', dtype=DataType.VARCHAR, max_length=10000),
-            FieldSchema(name='title', dtype=DataType.VARCHAR, max_length=200),
-            FieldSchema(name='embedding', dtype=DataType.FLOAT_VECTOR, dim=embedding_dimension),
-            FieldSchema(name='metadata', dtype=DataType.JSON)
-        ]
-        
-        schema = CollectionSchema(fields=fields, description='投标知识库')
-        
         # 如果集合不存在则创建
         if not utility.has_collection(self.collection_name):
-            self.collection = Collection(name=self.collection_name, schema=schema)
+            # 定义字段
+            fields = [
+                FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+                FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=4096),
+                FieldSchema(name="title", dtype=DataType.VARCHAR, max_length=256),
+                FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=embedding_dimension),
+                FieldSchema(name="metadata", dtype=DataType.JSON)
+            ]
             
-            # 创建索引
-            index_params = {
-                'index_type': settings.milvus_index_type,
-                'metric_type': 'L2',  # 使用 Milvus 支持的 L2 欧氏距离作为度量类型
-                'params': settings.milvus_index_params
-            }
-            self.collection.create_index(field_name='embedding', index_params=index_params)
+            # 创建集合模式
+            schema = CollectionSchema(fields=fields, description="投标知识库")
+            
+            # 创建集合
+            collection = Collection(name=self.collection_name, schema=schema)
             print(f"成功创建集合: {self.collection_name}")
+            
+            # 创建索引，添加度量类型（对于SentenceTransformer向量通常使用COSINE）
+            collection.create_index(
+                field_name="embedding",
+                index_params={"index_type": self.index_type, "metric_type": "COSINE", **self.index_params}
+            )
+            print(f"成功创建索引: {self.index_type}")
         else:
-            self.collection = Collection(name=self.collection_name)
             print(f"集合已存在: {self.collection_name}")
     
     def add_documents(self, documents: List[Dict[str, Any]]):
@@ -94,23 +100,16 @@ class MilvusKnowledgeBase:
         embeddings = self.embedding_model.encode(contents, convert_to_numpy=True).tolist()
         
         # 准备插入数据
-        content_list = [str(doc.get('content', '')) for doc in documents]
-        title_list = [str(doc.get('title', '')) for doc in documents]
-        metadata_list = [doc.get('metadata', {}) for doc in documents]
-        
-
-        
-        # 使用列表格式插入数据
         data = [
-            content_list,
-            title_list,
+            [str(doc.get('content', '')) for doc in documents],
+            [str(doc.get('title', '')) for doc in documents],
             embeddings,
-            metadata_list
+            [doc.get('metadata', {}) for doc in documents]
         ]
         
         # 插入数据
-        self.collection.insert(data)
-        self.collection.flush()
+        collection = Collection(name=self.collection_name)
+        collection.insert(data)
         print(f"成功添加 {len(documents)} 个文档到知识库")
     
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
@@ -123,35 +122,32 @@ class MilvusKnowledgeBase:
         Returns:
             搜索结果列表，包含 content, title, score 字段
         """
-        # 检查并创建索引
-        indexes = self.collection.indexes
-        if not indexes:
-            print("索引不存在，正在创建...")
-            index_params = {
-                'index_type': settings.milvus_index_type,
-                'metric_type': 'L2',
-                'params': settings.milvus_index_params
-            }
-            self.collection.create_index(field_name='embedding', index_params=index_params)
-            print("索引创建成功")
-        
         # 生成查询嵌入
         query_embedding = self.embedding_model.encode([query], convert_to_numpy=True).tolist()
         
-        # 搜索参数
-        search_params = {
-            'metric_type': 'L2',  # 使用 L2 欧氏距离作为度量类型（与索引一致）
-            'params': settings.milvus_search_params
-        }
+        # 加载集合
+        collection = Collection(name=self.collection_name)
+        
+        # 检查索引是否存在，如果不存在则创建
+        indexes = collection.indexes
+        if not indexes:
+            print("索引不存在，正在创建...")
+            collection.create_index(
+                field_name="embedding",
+                index_params={"index_type": self.index_type, "metric_type": "COSINE", **self.index_params}
+            )
+            print(f"成功创建索引: {self.index_type}")
+        
+        # 加载集合
+        collection.load()
         
         # 执行搜索
-        self.collection.load()
-        results = self.collection.search(
-            data=query_embedding,
-            anns_field='embedding',
-            param=search_params,
+        results = collection.search(
+            data=[query_embedding[0]],
+            anns_field="embedding",
+            param=self.search_params,
             limit=top_k,
-            output_fields=['content', 'title', 'metadata']
+            output_fields=['content', 'title']
         )
         
         # 处理搜索结果
@@ -161,26 +157,26 @@ class MilvusKnowledgeBase:
                 search_results.append({
                     'content': hit.entity.get('content'),
                     'title': hit.entity.get('title'),
-                    'score': hit.score,
-                    'metadata': hit.entity.get('metadata')
+                    'score': hit.score
                 })
         
         return search_results
     
     def delete_document(self, doc_id: int):
         """删除指定 ID 的文档"""
-        expr = f"id == {doc_id}"
-        self.collection.delete(expr)
+        collection = Collection(name=self.collection_name)
+        collection.delete(f"id == {doc_id}")
         print(f"成功删除文档: {doc_id}")
     
     def get_document_count(self) -> int:
         """获取知识库中文档数量"""
-        return self.collection.num_entities
+        collection = Collection(name=self.collection_name)
+        return collection.num_entities
     
     def clear_all_documents(self):
         """清空知识库所有文档"""
-        # 直接删除集合
-        self.collection.drop()
+        collection = Collection(name=self.collection_name)
+        collection.drop()
         print("删除集合成功")
         
         # 重新创建集合
