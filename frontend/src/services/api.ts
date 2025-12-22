@@ -3,7 +3,7 @@
  */
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -165,13 +165,13 @@ export const knowledgeBaseApi = {
     api.post('/api/knowledge-base/documents', documents),
 
   // 删除文档
-  deleteDocument: (docId: number) =>
-    api.delete(`/api/knowledge-base/documents/${docId}`),
+  deleteDocument: (docId: string) =>
+    api.delete('/api/knowledge-base/documents', { params: { doc_id: docId } }),
 
   // 搜索知识库
-  searchKnowledgeBase: (query: string, topK: number = 5) =>
+  searchKnowledgeBase: (query: string, topK: number = 5, groupName?: string) =>
     api.get('/api/knowledge-base/search', {
-      params: { query, top_k: topK }
+      params: { query, top_k: topK, groupName }
     }),
 
   // 获取知识库统计信息
@@ -181,6 +181,37 @@ export const knowledgeBaseApi = {
   // 清空知识库
   clearKnowledgeBase: () =>
     api.delete('/api/knowledge-base/clear'),
+  
+  // 获取所有知识库分组
+  getKnowledgeBaseGroups: () =>
+    api.get('/api/knowledge-base/groups'),
+  
+  // 添加新的知识库分组
+  addKnowledgeBaseGroup: (groupName: string) =>
+    api.post('/api/knowledge-base/groups', null, {
+      params: { group_name: groupName }
+    }),
+  
+  // 删除知识库分组
+  deleteKnowledgeBaseGroup: (groupName: string) =>
+    api.delete(`/api/knowledge-base/groups/${groupName}`),
+  
+  // 获取指定分组的文档
+  getDocumentsByGroup: (groupName: string, limit: number = 100) =>
+    api.get(`/api/knowledge-base/groups/${groupName}/documents`, {
+      params: { limit }
+    }),
+  
+  // 上传文件到指定分组
+  uploadDocumentToGroup: (groupName: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/api/knowledge-base/upload/${groupName}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+  },
 };
 
 export default api;
