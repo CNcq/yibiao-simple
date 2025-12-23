@@ -140,7 +140,7 @@ class MilvusKnowledgeBase:
         
         # 检查索引是否存在，如果不存在则创建
         indexes = collection.indexes
-        if len(indexes) < 2:  # 需要向量索引和倒排索引
+        if len(indexes) < 2:  # 需要向量索引和标题倒排索引
             print("索引不存在，正在创建...")
             # 创建向量索引
             collection.create_index(
@@ -160,10 +160,11 @@ class MilvusKnowledgeBase:
         collection.load()
         
         # 构建查询表达式
-        expr = None
+        expr_parts = []
         if keyword:
-            # 使用LIKE进行模糊匹配
-            expr = f"section_title LIKE '%{keyword}%'"
+            expr_parts.append(f"section_title LIKE '%{keyword}%'")
+        
+        expr = " AND ".join(expr_parts) if expr_parts else None
         
         # 执行搜索 - 混合检索
         results = collection.search(
@@ -172,7 +173,7 @@ class MilvusKnowledgeBase:
             param=self.search_params,
             limit=top_k,
             output_fields=['doc_id', 'section_title', 'summary', 'title_path'],
-            expr=expr  # 添加关键词过滤条件
+            expr=expr  # 添加过滤条件
         )
         
         # 处理搜索结果
@@ -217,16 +218,42 @@ class MilvusKnowledgeBase:
         
         return reference_sections
     
-    def delete_document(self, doc_id: int):
+    def delete_document(self, doc_id: str):
         """删除指定 ID 的文档"""
         collection = Collection(name=self.collection_name)
-        collection.delete(f"id == {doc_id}")
+        collection.delete(f"doc_id == '{doc_id}'")
         print(f"成功删除文档: {doc_id}")
     
     def get_document_count(self) -> int:
         """获取知识库中文档数量"""
         collection = Collection(name=self.collection_name)
         return collection.num_entities
+    
+    def get_document_by_id(self, doc_id: str, fields: List[str] = ['doc_id', 'section_title', 'summary', 'title_path']) -> Optional[Dict[str, Any]]:
+        """根据文档 ID 获取文档信息
+        
+        Args:
+            doc_id: 文档 ID
+            fields: 需要返回的字段列表，默认为所有字段
+            
+        Returns:
+            文档信息字典，如果不存在则返回 None
+        """
+        collection = Collection(name=self.collection_name)
+        
+        # 构建查询条件
+        expr = f"doc_id == '{doc_id}'"
+        
+        # 执行查询
+        results = collection.query(
+            expr=expr,
+            output_fields=fields
+        )
+        
+        if results and len(results) > 0:
+            return results[0]
+        return None
+    
     
     def clear_all_documents(self):
         """清空知识库所有文档"""

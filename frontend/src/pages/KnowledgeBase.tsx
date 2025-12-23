@@ -33,6 +33,7 @@ const KnowledgeBase: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<KnowledgeBaseDocument[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false); // 独立的创建分组加载状态
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -76,21 +77,12 @@ const KnowledgeBase: React.FC = () => {
       const response = await knowledgeBaseApi.getDocumentsByGroup(groupId, limit);
       
       if (!response?.data?.documents) {
-        throw new Error('无效的响应数据格式');
+        // 没有文档数据，直接返回空列表
+        setDocuments([]);
+        return;
       }
       
       const docs = response.data.documents;
-      
-      // 添加更详细的调试信息，查看文档数据结构和完整响应
-      console.log('从后端获取的完整响应:', response);
-      console.log('从后端获取的文档数据:', docs);
-      console.log('文档数据长度:', docs.length);
-      if (docs.length > 0) {
-        console.log('第一个文档的完整数据:', docs[0]);
-        console.log('第一个文档的section_title:', docs[0].section_title);
-        console.log('第一个文档的file_name:', docs[0].file_name);
-        console.log('第一个文档的title:', docs[0].title);
-      }
       
       // 转换为前端需要的格式
       const realDocuments = docs.map((doc: any, index: number) => ({
@@ -105,8 +97,6 @@ const KnowledgeBase: React.FC = () => {
       
       setDocuments(realDocuments);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '加载知识库文档失败';
-      setError(`加载文档失败: ${errorMessage}`);
       console.error('加载知识库文档失败:', err);
       // 清空文档列表，确保界面状态一致
       setDocuments([]);
@@ -122,23 +112,20 @@ const KnowledgeBase: React.FC = () => {
     try {
       // 调用API获取真实的分组数据
       const response = await knowledgeBaseApi.getKnowledgeBaseGroups();
+      console.log('删除后从后端获取的分组列表:', response.data.groups);
       const groups = response.data.groups;
       
-      // 为每个分组获取文档数量
-      const realGroups = await Promise.all(
-        groups.map(async (group: any) => {
-          const docsResponse = await knowledgeBaseApi.getDocumentsByGroup(group.name);
-          return {
-            id: group.name,
-            name: group.name,
-            description: group.description || '',
-            createdAt: new Date().toISOString(), // 后端API暂不支持创建时间
-            updatedAt: new Date().toISOString(), // 后端API暂不支持更新时间
-            documentCount: docsResponse?.data?.documents?.length || 0
-          };
-        })
-      );
+      // 处理分组数据，使用后端返回的文档数量
+      const realGroups = groups.map((group: any) => ({
+        id: group.name,
+        name: group.name,
+        description: group.description || '',
+        createdAt: new Date().toISOString(), // 后端API暂不支持创建时间
+        updatedAt: new Date().toISOString(), // 后端API暂不支持更新时间
+        documentCount: group.document_count || 0 // 使用后端返回的文档数量
+      }));
       
+      console.log('处理后的分组列表:', realGroups);
       setGroups(realGroups);
       
       // 默认选择第一个分组
@@ -173,26 +160,54 @@ const KnowledgeBase: React.FC = () => {
       return;
     }
 
-    setIsLoading(true);
+    const groupName = newGroupName.trim();
+    setIsCreatingGroup(true); // 设置独立的创建分组加载状态
     setError(null);
+    
     try {
       // 调用API创建真实的分组
-      await knowledgeBaseApi.addKnowledgeBaseGroup(newGroupName.trim());
+      await knowledgeBaseApi.addKnowledgeBaseGroup(groupName);
       
-      // 重新加载分组列表
-      await loadGroups();
+      // 立即将新分组添加到状态中，不等待完整的loadGroups
+      const newGroup = {
+        id: groupName,
+        name: groupName,
+        description: newGroupDescription || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        documentCount: 0
+      };
+      
+      // 更新分组列表
+      setGroups(prevGroups => [...prevGroups, newGroup]);
+      
+      // 立即选择新创建的分组
+      setSelectedGroup(groupName);
+      
+      // 直接设置空文档列表，不调用loadDocuments（进一步减少加载时间）
+      setDocuments([]);
       
       // 重置表单
       setNewGroupName('');
       setNewGroupDescription('');
       setShowGroupModal(false);
-      setSuccess(`分组「${newGroupName.trim()}」创建成功`);
+      setSuccess(`分组「${groupName}」创建成功`);
+      
+      // 后台异步刷新完整的分组列表（可选，确保数据一致性）
+      setTimeout(() => {
+        loadGroups().catch(err => {
+          console.error('后台刷新分组列表失败:', err);
+        });
+      }, 500);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '创建分组失败';
       setError(`创建分组失败: ${errorMsg}`);
       console.error('创建分组失败:', err);
+      // 发生错误时，仍尝试刷新分组列表以确保数据一致性
+      await loadGroups();
     } finally {
-      setIsLoading(false);
+      // 确保在任何情况下都能结束创建分组的加载状态
+      setIsCreatingGroup(false);
     }
   };
 
@@ -270,6 +285,7 @@ const KnowledgeBase: React.FC = () => {
 
   // 删除分组
   const handleDeleteGroup = async (groupId: string) => {
+    console.log('开始删除分组:', groupId);
     // 防止删除当前选中的分组，如果是当前选中的分组，先清空选中状态
     if (selectedGroup === groupId) {
       setSelectedGroup(null);
@@ -281,9 +297,11 @@ const KnowledgeBase: React.FC = () => {
     try {
       // 调用API删除分组
       await knowledgeBaseApi.deleteKnowledgeBaseGroup(groupId);
+      console.log('API删除分组成功');
       
-      // 更新分组列表
-      setGroups(groups.filter(group => group.id !== groupId));
+      // 重新加载分组列表以确保数据一致
+      console.log('开始重新加载分组列表');
+      await loadGroups();
       
       setSuccess('分组删除成功');
     } catch (err) {
@@ -479,7 +497,8 @@ const KnowledgeBase: React.FC = () => {
             )}
 
             {/* 文档列表 */}
-            {isLoading ? (
+            {/* 对于新创建的分组，直接显示空状态而不是加载动画 */}
+            {isLoading && !(selectedGroup && groups.some(group => group.id === selectedGroup && group.documentCount === 0)) ? (
               <div className="text-center py-8">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                 <p className="mt-2 text-gray-600">加载中...</p>
@@ -593,10 +612,10 @@ const KnowledgeBase: React.FC = () => {
               </button>
               <button
                 onClick={handleCreateGroup}
-                disabled={isLoading || !newGroupName.trim()}
+                disabled={isCreatingGroup || !newGroupName.trim()}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300"
               >
-                {isLoading ? '创建中...' : '创建'}
+                {isCreatingGroup ? '创建中...' : '创建'}
               </button>
             </div>
           </div>
