@@ -374,6 +374,12 @@ async def export_word(request: WordExportRequest):
 
         def add_markdown_content(content: str) -> None:
             """解析并渲染 Markdown 文本到文档"""
+            # 去除内容前后的HTML标签，特别是<p>标签
+            import re
+            # 去除开头的<p>标签（支持带有属性的情况和不同大小写）
+            content = re.sub(r'^\s*<p[^>]*>\s*', '', content, flags=re.IGNORECASE)
+            # 去除结尾的</p>标签（支持不同大小写）
+            content = re.sub(r'\s*</p>\s*$', '', content, flags=re.IGNORECASE)
             blocks = parse_markdown_blocks(content)
             render_markdown_blocks(blocks)
 
