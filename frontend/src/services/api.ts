@@ -133,14 +133,32 @@ export const contentApi = {
     api.post('/api/content/generate-chapter', data),
 
   // 流式生成单章节内容
-  generateChapterContentStream: (data: ChapterContentRequest) =>
-    fetch(`${API_BASE_URL}/api/content/generate-chapter-stream`, {
+  generateChapterContentStream: (data: ChapterContentRequest, signal?: AbortSignal) => {
+    const timeout = 300000; // 5分钟超时时间
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    // 如果传入了外部的signal，则监听其abort事件
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        clearTimeout(timeoutId);
+        controller.abort();
+      });
+    }
+
+    return fetch(`${API_BASE_URL}/api/content/generate-chapter-stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(data),
-    }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
+  },
+  
+  // 取消正在进行的生成任务
+  cancelGeneration: (taskId: string) =>
+    api.post('/api/content/cancel-generation', { task_id: taskId }),
 };
 
 // 方案扩写相关API

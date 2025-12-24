@@ -64,6 +64,15 @@ const ContentEdit: React.FC<ContentEditProps> = ({
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<string>('');
+  const [isGeneratingChapter, setIsGeneratingChapter] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  
+  // 使用ref跟踪outlineData的最新值
+  const outlineDataRef = React.useRef(outlineData);
+  
+  useEffect(() => {
+    outlineDataRef.current = outlineData;
+  }, [outlineData]);
   
   // 知识库相关状态
   const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(true);
@@ -165,7 +174,81 @@ const ContentEdit: React.FC<ContentEditProps> = ({
     }
   }, [outlineData, collectLeafItems]);
 
-  // 生成内容
+  // 基于知识库为单个章节生成内容
+  const generateChapterContent = async (item: OutlineItem): Promise<boolean> => {
+    const currentOutlineData = outlineDataRef.current;
+    if (!currentOutlineData) return false;
+    
+    setIsGeneratingChapter(prev => new Set(prev).add(item.id));
+    setError(null);
+    
+    try {
+      // 1. 基于章节名称搜索知识库
+      const kbResults = await knowledgeBaseApi.searchKnowledgeBase(item.title, 10);
+      const knowledgeBaseReferences = kbResults.data.results || [];
+      
+      // 2. 准备内容生成请求
+      const request: ChapterContentRequest = {
+        chapter: item,
+        project_overview: currentOutlineData.project_overview || '',
+        prompt: knowledgeBaseReferences.length > 0 
+          ? `请基于以下参考资料，结合项目概述，生成"${item.title}"章节的详细内容：
+
+参考资料：
+${knowledgeBaseReferences.map((ref: any, index: number) => `${index + 1}. ${ref.summary}`).join('\n\n')}`
+          : undefined
+      };
+      
+      // 3. 调用内容生成API
+      const response = await contentApi.generateChapterContent(request);
+      
+      // 4. 获取最新的outlineData，确保更新基于最新状态
+      const latestOutlineData = outlineDataRef.current;
+      if (!latestOutlineData) return false;
+      
+      // 5. 更新章节内容
+      const updatedOutline = updateItemContent(latestOutlineData.outline, item.id, response.data.content);
+      
+      // 6. 更新状态
+      updateOutline({
+        ...latestOutlineData,
+        outline: updatedOutline
+      });
+      
+      return true;
+    } catch (err) {
+      console.error(`生成章节 "${item.title}" 内容失败:`, err);
+      setError(`生成章节 "${item.title}" 内容失败`);
+      return false;
+    } finally {
+      setIsGeneratingChapter(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(item.id);
+        return newSet;
+      });
+    }
+  };
+  
+  // 递归更新章节内容
+  const updateItemContent = (items: OutlineItem[], itemId: string, content: string): OutlineItem[] => {
+    return items.map(item => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          content: content
+        };
+      }
+      if (item.children && item.children.length > 0) {
+        return {
+          ...item,
+          children: updateItemContent(item.children, itemId, content)
+        };
+      }
+      return item;
+    });
+  };
+  
+  // 生成所有内容
   const handleGenerateContent = async () => {
     if (isGenerating || leafItems.length === 0) return;
     
@@ -178,29 +261,93 @@ const ContentEdit: React.FC<ContentEditProps> = ({
       generating: new Set<string>()
     });
     
-    // 模拟生成过程
-    for (const item of leafItems) {
+    // 实际生成所有章节内容
+    let generatedItems = new Set<string>();
+    let currentLeafItems: OutlineItem[] = [];
+    
+    while (true) {
+      // 每次迭代都从最新的outlineData中重新收集leafItems
+      if (outlineDataRef.current?.outline) {
+        currentLeafItems = collectLeafItems(outlineDataRef.current.outline);
+      }
+      
+      // 计算未生成的章节
+      const ungeneratedItems = currentLeafItems.filter(item => !generatedItems.has(item.id));
+      
+      if (ungeneratedItems.length === 0) {
+        break; // 所有章节都已生成
+      }
+      
+      // 创建副本避免no-loop-func警告
+      const currentLeafItemsCopy = currentLeafItems;
+      const firstUngeneratedItem = ungeneratedItems[0];
+      
+      // 更新进度信息
       setProgress(prev => ({
         ...prev,
-        current: item.title,
-        generating: new Set(prev.generating).add(item.id)
+        total: currentLeafItemsCopy.length,
+        current: firstUngeneratedItem.title,
+        generating: new Set(prev.generating).add(firstUngeneratedItem.id)
       }));
       
-      // 模拟生成延迟
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 声明item变量在循环外部，避免no-loop-func警告
+      const currentItem = ungeneratedItems[0];
       
-      setProgress(prev => {
-        const newGenerating = new Set(prev.generating);
-        newGenerating.delete(item.id);
-        return {
-          ...prev,
-          completed: prev.completed + 1,
-          generating: newGenerating
-        };
-      });
+      try {
+        // 调用章节内容生成函数
+        await generateChapterContent(currentItem);
+        
+        // 等待更长时间，确保outlineData更新完成
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 标记为已生成
+        generatedItems.add(currentItem.id);
+        
+        // 更新进度：完成一个章节
+        setProgress(prev => {
+          const newGenerating = new Set(prev.generating);
+          newGenerating.delete(currentItem.id);
+          return {
+            ...prev,
+            completed: generatedItems.size,
+            generating: newGenerating
+          };
+        });
+      } catch (err) {
+        console.error(`生成章节 "${currentItem.title}" 失败:`, err);
+        
+        // 标记为已尝试生成（无论成功或失败）
+        generatedItems.add(currentItem.id);
+        
+        // 更新进度：标记为失败
+        setProgress(prev => {
+          const newGenerating = new Set(prev.generating);
+          newGenerating.delete(currentItem.id);
+          return {
+            ...prev,
+            failed: [...prev.failed, currentItem.title],
+            completed: generatedItems.size,
+            generating: newGenerating
+          };
+        });
+      }
+    }
+    
+    // 等待更长时间，确保outlineData完全更新
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // 使用最新的outlineData更新leafItems
+    if (outlineDataRef.current?.outline) {
+      const leaves = collectLeafItems(outlineDataRef.current.outline);
+      setLeafItems(leaves);
     }
     
     setIsGenerating(false);
+    
+    // 生成完成后自动滚动到页面底部，确保所有章节都可见
+    setTimeout(() => {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }, 500);
   };
 
   // 导出Word文档
@@ -370,7 +517,31 @@ const ContentEdit: React.FC<ContentEditProps> = ({
           <div className="space-y-6">
             {leafItems.map((item) => (
               <div key={item.id} className="border-b border-gray-200 pb-6">
-                <h4 className="text-lg font-medium text-gray-900 mb-2">{item.title}</h4>
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="text-lg font-medium text-gray-900">{item.title}</h4>
+                  <button
+                    onClick={() => generateChapterContent(item)}
+                    disabled={isGeneratingChapter.has(item.id)}
+                    className={`inline-flex items-center px-3 py-1 text-sm rounded-md ${isGeneratingChapter.has(item.id) ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'} focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
+                  >
+                    {isGeneratingChapter.has(item.id) ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        生成中...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
+                        </svg>
+                        基于知识库生成
+                      </>
+                    )}
+                  </button>
+                </div>
                 <div className="prose max-w-none">
                   {item.content || <p className="text-gray-400 italic">内容尚未生成</p>}
                 </div>

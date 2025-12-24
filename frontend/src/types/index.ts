@@ -15,6 +15,7 @@ export interface OutlineItem {
   children?: OutlineItem[];
   content?: string;
   prompt?: string;
+  visible?: boolean;
 }
 
 export interface OutlineData {

@@ -7,7 +7,7 @@ import ConfigPanel from './components/ConfigPanel';
 import StepBar from './components/StepBar';
 import DocumentAnalysis from './pages/DocumentAnalysis';
 import OutlineEdit from './pages/OutlineEdit';
-import ContentEdit from './pages/ContentEdit';
+import UnifiedEditPage from './pages/UnifiedEditPage';
 import KnowledgeBase from './pages/KnowledgeBase';
 
 
@@ -55,7 +55,7 @@ function App() {
         );
       case 2:
         return (
-          <ContentEdit
+          <UnifiedEditPage
             outlineData={state.outlineData}
             selectedChapter={state.selectedChapter}
             onChapterSelect={updateSelectedChapter}
