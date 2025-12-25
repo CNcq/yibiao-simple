@@ -247,3 +247,4 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .idea
+backend/data/Qwen3-Embedding-0.6B/

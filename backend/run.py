@@ -5,6 +5,9 @@ import multiprocessing
 import argparse
 import sys
 
+# 设置Hugging Face国内镜像地址
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+
 if __name__ == "__main__":
     # 确保在正确的目录中运行
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -22,7 +25,8 @@ if __name__ == "__main__":
             port=args.port,
             reload=False,  # 多进程模式下不支持reload
             log_level="info",
-            workers=multiprocessing.cpu_count() * 2,  # CPU核心数的2倍，最大化并发能力
+            # workers=multiprocessing.cpu_count() * 2,  # CPU核心数的2倍，最大化并发能力
+            workers=1,
             lifespan="on",  # 启用生命周期管理
             timeout_graceful_shutdown=10  # 优雅关闭超时时间
         )

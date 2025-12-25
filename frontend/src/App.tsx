@@ -12,7 +12,7 @@ import KnowledgeBase from './pages/KnowledgeBase';
 
 
 function App() {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [activePage, setActivePage] = useState<'bid' | 'knowledge'>('bid');
   const {
     state,

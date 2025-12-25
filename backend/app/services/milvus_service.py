@@ -6,6 +6,10 @@ import os
 import json
 import numpy as np
 from typing import List, Dict, Any, Optional
+
+# 设置Hugging Face国内镜像地址
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+
 from pymilvus import connections, utility, Collection, FieldSchema, CollectionSchema, DataType
 from sentence_transformers import SentenceTransformer
 
@@ -32,6 +36,7 @@ class MilvusKnowledgeBase:
         self.search_params = settings.milvus_search_params
         
         # 初始化嵌入模型
+        # self.embedding_model = SentenceTransformer('Qwen/Qwen3-Embedding-0.6')
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
         
         # 连接Milvus服务器

@@ -989,12 +989,23 @@ ${item.content || '内容尚未生成'}
     // 更新outlineData，移除指定章节
     const updatedOutline = updateItemVisibility(currentOutlineData.outline, chapterId, false);
     
-    // 更新状态
-    updateOutline({
+    // 创建更新后的outlineData对象
+    const newOutlineData = {
       ...currentOutlineData,
       outline: updatedOutline
-    });
+    };
     
+    // 更新状态
+    updateOutline(newOutlineData);
+    
+    // 立即更新outlineDataRef，确保后续操作使用最新的outlineData
+    outlineDataRef.current = newOutlineData;
+
+    // 直接使用updatedOutline更新leafItems，确保侧边栏立即反映删除操作
+    // 这样可以绕过父组件outlineData可能的异步更新延迟
+    const updatedLeafItems = collectLeafItems(updatedOutline);
+    setLeafItems(updatedLeafItems);
+
     // 从章节要求中移除
     setChapterRequirements(prev => {
       const newRequirements = {...prev};
@@ -1018,12 +1029,11 @@ ${item.content || '内容尚未生成'}
         let chapterTitlePos = -1;
         let chapterTitleNode: any = null;
         
+        // 先找到要删除的章节信息
+        const deletedItem = findItemById(updatedOutline, chapterId);
+        
         doc.descendants((node: any, pos: number) => {
           // 查找对应的章节标题
-          const currentOutlineData = outlineDataRef.current;
-          if (!currentOutlineData) return false;
-          
-          const deletedItem = findItemById(currentOutlineData.outline, chapterId);
           if (!deletedItem) return true;
           
           if (node.type.name === 'heading' && node.attrs.level === 1 && node.textContent === deletedItem.title) {
@@ -1098,10 +1108,10 @@ ${item.content || '内容尚未生成'}
   const updateItemVisibility = (items: OutlineItem[], itemId: string, visible: boolean): OutlineItem[] => {
     return items.map(item => {
       if (item.id === itemId) {
-        // 标记为不可见（删除）
+        // 标记为指定的可见状态
         return {
           ...item,
-          visible: false
+          visible: visible
         };
       }
       if (item.children && item.children.length > 0) {
