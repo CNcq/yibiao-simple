@@ -33,6 +33,254 @@ def set_paragraph_font_simsun(paragraph: docx.text.paragraph.Paragraph) -> None:
         set_run_font_simsun(run)
 
 
+def clean_html_tags(content: str) -> str:
+    """清理HTML标签，保留Markdown格式的内容"""
+    import re
+    
+    if not content:
+        return ''
+    
+    # 首先处理HTML实体，确保所有实体都被正确转换
+    html_entities = {
+        r'&nbsp;': ' ',
+        r'&amp;': '&',
+        r'&lt;': '<',
+        r'&gt;': '>',
+        r'&quot;': '"',
+        r'&#39;': "'",
+        r'&copy;': '©',
+        r'&reg;': '®',
+        r'&trade;': '™',
+        r'&ldquo;': '"',
+        r'&rdquo;': '"',
+        r'&lsquo;': "'",
+        r'&rsquo;': "'",
+        r'&ndash;': '-',
+        r'&mdash;': '--',
+        r'&plusmn;': '±',
+        r'&times;': '×',
+        r'&divide;': '÷',
+        r'&cent;': '¢',
+        r'&pound;': '£',
+        r'&euro;': '€',
+        r'&yen;': '¥',
+        r'&part;': '∂',
+        r'&sum;': '∑',
+        r'&prod;': '∏',
+        r'&pi;': 'π',
+        r'&theta;': 'θ',
+        r'&phi;': 'φ',
+        r'&omega;': 'ω',
+        r'&alpha;': 'α',
+        r'&beta;': 'β',
+        r'&gamma;': 'γ',
+        r'&delta;': 'δ',
+        r'&epsilon;': 'ε',
+        r'&sigma;': 'σ',
+        r'&tau;': 'τ',
+        r'&mu;': 'μ',
+        r'&lambda;': 'λ',
+        r'&upsilon;': 'υ',
+        r'&phi;': 'φ',
+        r'&chi;': 'χ',
+        r'&psi;': 'ψ',
+        r'&omega;': 'ω',
+        r'&Alpha;': 'Α',
+        r'&Beta;': 'Β',
+        r'&Gamma;': 'Γ',
+        r'&Delta;': 'Δ',
+        r'&Epsilon;': 'Ε',
+        r'&Zeta;': 'Ζ',
+        r'&Eta;': 'Η',
+        r'&Theta;': 'Θ',
+        r'&Iota;': 'Ι',
+        r'&Kappa;': 'Κ',
+        r'&Lambda;': 'Λ',
+        r'&Mu;': 'Μ',
+        r'&Nu;': 'Ν',
+        r'&Xi;': 'Ξ',
+        r'&Omicron;': 'Ο',
+        r'&Pi;': 'Π',
+        r'&Rho;': 'Ρ',
+        r'&Sigma;': 'Σ',
+        r'&Tau;': 'Τ',
+        r'&Upsilon;': 'Υ',
+        r'&Phi;': 'Φ',
+        r'&Chi;': 'Χ',
+        r'&Psi;': 'Ψ',
+        r'&Omega;': 'Ω',
+        r'&le;': '≤',
+        r'&ge;': '≥',
+        r'&ne;': '≠',
+        r'&equiv;': '≡',
+        r'&approx;': '≈',
+        r'&sim;': '~',
+        r'&perp;': '⊥',
+        r'&parallel;': '∥',
+        r'&deg;': '°',
+        r'&prime;': '′',
+        r'&Prime;': '″',
+        r'&micro;': 'μ',
+        r'&ohm;': 'Ω',
+        r'&ang;': '∠',
+        r'&nabla;': '∇',
+        r'&infin;': '∞',
+        r'&partial;': '∂',
+        r'&int;': '∫',
+        r'&sum;': '∑',
+        r'&prod;': '∏',
+        r'&sqrt;': '√',
+        r'&cube;': '∛',
+        r'&frac12;': '½',
+        r'&frac14;': '¼',
+        r'&frac34;': '¾',
+        r'&frac13;': '⅓',
+        r'&frac23;': '⅔',
+        r'&frac15;': '⅕',
+        r'&frac25;': '⅖',
+        r'&frac35;': '⅗',
+        r'&frac45;': '⅘',
+        r'&frac16;': '⅙',
+        r'&frac56;': '⅚',
+        r'&frac18;': '⅛',
+        r'&frac38;': '⅜',
+        r'&frac58;': '⅝',
+        r'&frac78;': '⅞',
+        r'&laquo;': '«',
+        r'&raquo;': '»',
+        r'&dagger;': '†',
+        r'&Dagger;': '‡',
+        r'&hellip;': '…',
+        r'&lsaquo;': '‹',
+        r'&rsaquo;': '›',
+        r'&sbquo;': '‚',
+        r'&bdquo;': '„',
+        r'&lrm;': '',
+        r'&rlm;': '',
+        r'&zwj;': '',
+        r'&zwnj;': '',
+    }
+    
+    for entity, replacement in html_entities.items():
+        content = re.sub(entity, replacement, content)
+    
+    # 移除HTML注释
+    content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
+    
+    # 处理pre标签（保留代码块格式）
+    def pre_tag_replace(match):
+        pre_content = match.group(1)
+        return f'\n```\n{pre_content}\n```\n'
+    content = re.sub(r'\s*<pre[^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>\s*', pre_tag_replace, content, flags=re.IGNORECASE | re.DOTALL)
+    content = re.sub(r'\s*<pre[^>]*>\s*(.*?)\s*</pre>\s*', pre_tag_replace, content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # 处理blockquote标签（转换为Markdown引用）
+    def blockquote_replace(match):
+        quote_content = match.group(1)
+        lines = quote_content.split('\n')
+        quoted_lines = ['> ' + line if line.strip() else '>' for line in lines]
+        return '\n' + '\n'.join(quoted_lines) + '\n'
+    content = re.sub(r'\s*<blockquote[^>]*>\s*(.*?)\s*</blockquote>\s*', blockquote_replace, content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # 处理code标签（保留代码格式）
+    content = re.sub(r'\s*<code[^>]*>\s*(.*?)\s*</code>\s*', r'`\1`', content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # 先转换主要的格式化标签为Markdown，这样它们不会被后续的标签移除
+    
+    # 转换标题标签为Markdown标题
+    for i in range(1, 7):
+        tag = f'h{i}'
+        # 捕获所有标题内容，包括换行符
+        content = re.sub(rf'<{tag}[^>]*>(.*?)</{tag}>', rf'{"#"*i} \1\n\n', content, flags=re.IGNORECASE | re.DOTALL)
+        # 处理异常情况：不匹配的结束标签
+        content = re.sub(rf'<{tag}[^>]*>(.*?)</[^>]+>', rf'{"#"*i} \1\n\n', content, flags=re.IGNORECASE | re.DOTALL)
+        # 处理只有开始标签没有结束标签的情况
+        content = re.sub(rf'<{tag}[^>]*>(.*?)(?:$|<)', rf'{"#"*i} \1\n\n', content, flags=re.IGNORECASE | re.DOTALL)
+
+    # 然后处理段落标签转换为换行
+    content = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', content, flags=re.IGNORECASE | re.DOTALL)
+    # 确保标题和段落之间有正确的换行符
+    content = re.sub(r'(### .*?)\n(.*?)', r'\1\n\n\2', content, flags=re.DOTALL)
+    
+    # 列表标签转换为Markdown列表
+    # 确保ul/ol标签前后都有换行符，特别是当它们紧跟在其他内容后面时
+    content = re.sub(r'(?<!\n)\s*<ul[^>]*>\s*', r'\n\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*</ul>\s*(?!\n)', r'\n\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'(?<!\n)\s*<ol[^>]*>\s*', r'\n\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*</ol>\s*(?!\n)', r'\n\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*<li[^>]*>\s*(.*?)\s*</li>\s*', r'- \1\n', content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # 特殊处理段落结束后直接跟列表的情况
+    content = re.sub(r'(\.)\s*(- )', r'\1\n\2', content)
+    # 更通用的处理：确保在任何文本后直接跟列表项时都添加换行符
+    content = re.sub(r'([^\n])\s*(- )', r'\1\n\2', content)
+    
+    # 处理加粗和斜体标签
+    content = re.sub(r'\s*<(strong|b)[^>]*>\s*(.*?)\s*</(strong|b)>\s*', r'**\2**', content, flags=re.IGNORECASE | re.DOTALL)
+    content = re.sub(r'\s*<(em|i)[^>]*>\s*(.*?)\s*</(em|i)>\s*', r'*\2*', content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # 处理链接标签（简单保留文本内容）
+    content = re.sub(r'\s*<a[^>]*>\s*(.*?)\s*</a>\s*', r'\1', content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # 处理图片标签（移除）
+    content = re.sub(r'\s*<img[^>]*>\s*', '', content, flags=re.IGNORECASE)
+    
+    # 处理<br>标签为换行
+    content = re.sub(r'\s*<br[^>]*>\s*', r'\n', content, flags=re.IGNORECASE)
+    
+    # 处理<hr>标签为分隔线
+    content = re.sub(r'\s*<hr[^>]*>\s*', r'\n---\n', content, flags=re.IGNORECASE)
+    
+    # 处理div和span标签
+    content = re.sub(r'\s*<div[^>]*>\s*', r'\n\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*</div>\s*', r'\n\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*<span[^>]*>\s*', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*</span>\s*', '', content, flags=re.IGNORECASE)
+    
+    # 处理表格标签（简单转换为文本）
+    content = re.sub(r'\s*<table[^>]*>\s*', r'\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*</table>\s*', r'\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*<tr[^>]*>\s*', r'\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*</tr>\s*', r'\n', content, flags=re.IGNORECASE)
+    content = re.sub(r'\s*<td[^>]*>\s*(.*?)\s*</td>\s*', r'| \1 ', content, flags=re.IGNORECASE | re.DOTALL)
+    content = re.sub(r'\s*<th[^>]*>\s*(.*?)\s*</th>\s*', r'| **\1** ', content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # 处理其他块级元素
+    block_elements = ['section', 'article', 'header', 'footer', 'nav', 'aside', 'main', 'figure', 'figcaption', 'form', 'fieldset', 'legend', 'label', 'button', 'select', 'option', 'optgroup', 'datalist', 'textarea', 'input', 'progress', 'meter', 'details', 'summary', 'dialog']
+    for element in block_elements:
+        content = re.sub(rf'\s*<{element}[^>]*>\s*', r'\n\n', content, flags=re.IGNORECASE)
+        content = re.sub(rf'\s*</{element}>\s*', r'\n\n', content, flags=re.IGNORECASE)
+    
+    # 处理内联元素
+    inline_elements = ['u', 's', 'sup', 'sub', 'kbd', 'var', 'samp', 'cite', 'dfn', 'abbr', 'mark', 'small', 'del', 'ins', 'ruby', 'rt', 'rp', 'bdi', 'bdo', 'data', 'time', 'output', 'link', 'meta', 'base', 'style', 'script', 'noscript', 'template', 'slot', 'canvas', 'svg', 'math']
+    for element in inline_elements:
+        content = re.sub(rf'\s*<{element}[^>]*>\s*', '', content, flags=re.IGNORECASE)
+        content = re.sub(rf'\s*</{element}>\s*', '', content, flags=re.IGNORECASE)
+    
+    # 处理自闭合标签
+    content = re.sub(r'\s*<[^>]+/>\s*', '', content, flags=re.IGNORECASE)
+    
+    # 处理可能的未闭合标签
+    content = re.sub(r'<[^>]*$', '', content)  # 处理行尾的未闭合标签
+    content = re.sub(r'<[^>]+\s*$', '', content)  # 处理文件末尾的未闭合标签
+    
+    # 多次去除所有剩余的HTML标签，确保彻底清除嵌套标签
+    for _ in range(10):  # 增加到10次处理，确保嵌套标签被彻底清除
+        content = re.sub(r'<[^>]+>', '', content, flags=re.DOTALL)
+    
+    # 清理可能的实体残留
+    content = re.sub(r'&[^;]+;', '', content)
+    
+    # 清理多余的空行
+    content = re.sub(r'\n{3,}', r'\n\n', content)
+    
+    # 清理行首行尾的空格
+    content = re.sub(r'^\s+', '', content, flags=re.MULTILINE)
+    content = re.sub(r'\s+$', '', content, flags=re.MULTILINE)
+    
+    return content.strip()
+
+
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """上传文档文件并提取文本内容"""
@@ -192,6 +440,8 @@ async def export_word(request: WordExportRequest):
 
         # 文档标题
         title = request.project_name or "投标技术文件"
+        # 清理标题中的HTML标签
+        title = clean_html_tags(title)
         title_p = doc.add_paragraph()
         title_run = title_p.add_run(title)
         title_run.bold = True
@@ -204,7 +454,9 @@ async def export_word(request: WordExportRequest):
             heading = doc.add_heading("项目概述", level=1)
             heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
             set_paragraph_font_simsun(heading)
-            overview_p = doc.add_paragraph(request.project_overview)
+            # 清理项目概述中的HTML标签
+            cleaned_overview = clean_html_tags(request.project_overview)
+            overview_p = doc.add_paragraph(cleaned_overview)
             set_paragraph_font_simsun(overview_p)
             overview_p_format = overview_p.paragraph_format
             overview_p_format.space_after = Pt(12)
@@ -308,7 +560,7 @@ async def export_word(request: WordExportRequest):
 
                 # Markdown 标题（# / ## / ###）
                 if line.startswith("#"):
-                    m = re.match(r"^(#+)\s*(.*)$", line)
+                    m = re.match(r"^(\#+)\s*(.*)$", line)
                     if m:
                         level_marks, title_text = m.groups()
                         level = min(len(level_marks), 3)
@@ -374,30 +626,84 @@ async def export_word(request: WordExportRequest):
 
         def add_markdown_content(content: str) -> None:
             """解析并渲染 Markdown 文本到文档"""
-            # 去除内容前后的HTML标签，特别是<p>标签
-            import re
-            # 去除开头的<p>标签（支持带有属性的情况和不同大小写）
-            content = re.sub(r'^\s*<p[^>]*>\s*', '', content, flags=re.IGNORECASE)
-            # 去除结尾的</p>标签（支持不同大小写）
-            content = re.sub(r'\s*</p>\s*$', '', content, flags=re.IGNORECASE)
+            # 清理HTML标签，转换为纯Markdown内容
+            content = clean_html_tags(content)
             blocks = parse_markdown_blocks(content)
             render_markdown_blocks(blocks)
+
+        # 应用样式配置到文档
+        def apply_style_config():
+            """应用前端传递的样式配置"""
+            if not request.styleConfig:
+                return
+
+            # 获取标题格式设置
+            title_format = request.styleConfig.get('titleFormat', '第一章/第一节')
+            chapter_start = request.styleConfig.get('chapterStart', '第一章')
+
+            # 根据标题格式调整章节编号
+            # 这里可以根据需要扩展更多的编号格式处理
+            return {
+                'title_format': title_format,
+                'chapter_start': chapter_start
+            }
+
+        # 获取样式配置
+        style_config = apply_style_config()
 
         # 递归构建文档内容（章节和内容）
         def add_outline_items(items, level: int = 1):
             for item in items:
                 # 章节标题
                 if level <= 3:
-                    heading = doc.add_heading(f"{item.id} {item.title}", level=level)
+                    # 清理标题中的HTML标签
+                    clean_title = clean_html_tags(item.title)
+                    heading = doc.add_heading(f"{item.id} {clean_title}", level=level)
                     heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
                     for hr in heading.runs:
                         hr.font.name = "宋体"
                         rr = hr._element.rPr
                         if rr is not None and rr.rFonts is not None:
                             rr.rFonts.set(qn("w:eastAsia"), "宋体")
+                    
+                    # 应用样式配置中的标题格式
+                    if request.styleConfig:
+                        level_key = f'level{level}'
+                        if level_key in request.styleConfig:
+                            level_style = request.styleConfig[level_key]
+                            # 设置对齐方式
+                            align_map = {
+                                'left': WD_ALIGN_PARAGRAPH.LEFT,
+                                'center': WD_ALIGN_PARAGRAPH.CENTER,
+                                'right': WD_ALIGN_PARAGRAPH.RIGHT,
+                                'justify': WD_ALIGN_PARAGRAPH.JUSTIFY
+                            }
+                            if level_style.get('align') in align_map:
+                                heading.alignment = align_map[level_style['align']]
+                            
+                            # 设置字号
+                            if level_style.get('size'):
+                                size_map = {
+                                    '二号': 22,
+                                    '三号': 16,
+                                    '四号': 14,
+                                    '五号': 12,
+                                    '小四号': 12,
+                                    '小五号': 9
+                                }
+                                if level_style['size'] in size_map:
+                                    for hr in heading.runs:
+                                        hr.font.size = Pt(size_map[level_style['size']])
+                            
+                            # 设置加粗
+                            if 'bold' in level_style:
+                                for hr in heading.runs:
+                                    hr.font.bold = level_style['bold']
                 else:
+                    # 清理标题中的HTML标签
+                    clean_title = clean_html_tags(item.title)
                     para = doc.add_paragraph()
-                    run = para.add_run(f"{item.id} {item.title}")
+                    run = para.add_run(f"{item.id} {clean_title}")
                     run.bold = True
                     run.font.name = "宋体"
                     rr = run._element.rPr
@@ -440,3 +746,74 @@ async def export_word(request: WordExportRequest):
         print("导出Word失败:", str(e))
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"导出Word失败: {str(e)}")
+
+
+# 测试函数：验证clean_html_tags函数的修复效果
+def test_clean_html_tags():
+    """测试HTML标签清理功能"""
+    import re
+    
+    # 直接导入clean_html_tags函数
+    from app.routers.document import clean_html_tags
+    clean_html_tags_func = clean_html_tags
+    
+    # 测试用例
+    test_cases = [
+        # 基本HTML标签
+        ("<h3>测试标题</h3>", "### 测试标题"),
+        ("<p>这是一个段落</p>", "这是一个段落"),
+        ("<strong>加粗文本</strong>", "**加粗文本**"),
+        ("<em>斜体文本</em>", "*斜体文本*"),
+        
+        # 嵌套HTML标签
+        ("<p>这是一个<strong>加粗</strong>的段落</p>", "这是一个**加粗**的段落"),
+        ("<div><h3>标题</h3><p>内容</p></div>", "### 标题\n内容"),
+        ("<p>这是<em>斜体<strong>加粗斜体</strong></em>文本</p>", "这是*斜体**加粗斜体***文本"),
+        
+        # HTML实体
+        ("<p>测试&amp;测试</p>", "测试&测试"),
+        ("<p>测试&nbsp;空格</p>", "测试 空格"),
+        ("<p>© 版权所有</p>", "© 版权所有"),
+        
+        # 特殊HTML标签
+        ("<pre><code>print('hello world')</code></pre>", "```\nprint('hello world')\n```"),
+        ("<blockquote>引用文本</blockquote>", "> 引用文本"),
+        ("<code>code</code>", "`code`"),
+        
+        # 不规范HTML
+        ("<h3>测试标题</h3><p>段落</p>", "### 测试标题\n段落"),
+        ("<h3>测试标题<p>段落</h3>", "### 测试标题段落"),
+        ("<h3>测试标题</p>", "### 测试标题"),
+        
+        # 多标签混合
+        ("<div><h3>项目概述</h3><p>这是一个<em>详细</em>的项目概述，包含<strong>重要</strong>信息。</p><ul><li>点1</li><li>点2</li></ul></div>", "### 项目概述\n这是一个*详细*的项目概述，包含**重要**信息。\n- 点1\n- 点2"),
+        
+        # 用户反馈中提到的问题：h3标签残留
+        ("<h3>技术方案</h3><p>详细内容</p>", "### 技术方案\n详细内容"),
+    ]
+    
+    # 运行测试
+    passed = 0
+    failed = 0
+    for i, (input_html, expected) in enumerate(test_cases, 1):
+        result = clean_html_tags(input_html)
+        if result == expected:
+            print(f"测试 {i} 通过:")
+            print(f"  输入: {input_html[:50]}{'...' if len(input_html) > 50 else ''}")
+            print(f"  输出: {result[:50]}{'...' if len(result) > 50 else ''}")
+            passed += 1
+        else:
+            print(f"测试 {i} 失败:")
+            print(f"  输入: {input_html}")
+            print(f"  期望: {expected}")
+            print(f"  实际: {result}")
+            failed += 1
+        print()
+    
+    print(f"测试完成: {passed} 通过, {failed} 失败")
+    return passed, failed
+
+
+# 如果直接运行此文件，执行测试
+if __name__ == "__main__":
+    test_clean_html_tags()

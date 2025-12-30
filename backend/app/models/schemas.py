@@ -98,3 +98,4 @@ class WordExportRequest(BaseModel):
     project_name: Optional[str] = Field(None, description="项目名称")
     project_overview: Optional[str] = Field(None, description="项目概述")
     outline: List[OutlineItem] = Field(..., description="目录结构，包含内容")
+    styleConfig: Optional[Dict[str, Any]] = Field(None, description="Word文档样式配置")
