@@ -339,11 +339,8 @@ class FileService:
     @staticmethod
     async def extract_text_from_docx(file_path: str) -> str:
         """从Word文档提取文本，支持表格内容和图片"""
-        if HAS_ADVANCED_LIBS:
-            return await FileService._extract_docx_with_docx2python(file_path)
-        else:
-            # 降级到原来的python-docx方法，但增强表格处理
-            return await FileService._extract_docx_with_python_docx(file_path)
+        # 直接使用python-docx方法，避免docx2python的表格解析问题
+        return await FileService._extract_docx_with_python_docx(file_path)
     
     @staticmethod
     async def _extract_docx_with_docx2python(file_path: str) -> str:
@@ -359,20 +356,46 @@ class FileService:
             # 使用上下文管理器确保文件及时关闭，避免Windows上的锁定
             with docx2python(file_path) as content:
                 # 处理文档内容
-                if hasattr(content, 'document'):
+                if hasattr(content, 'text'):
+                    # 使用text属性获取纯文本内容，避免列表解析问题
+                    text = content.text.strip()
+                    if text:
+                        extracted_text.append(text)
+                elif hasattr(content, 'document'):
+                    # 兼容旧版本的docx2python
                     for section in content.document:
                         for element in section:
                             if isinstance(element, list):
-                                # 这可能是表格
-                                extracted_text.append("\n[表格内容]")
-                                for row in element:
-                                    if isinstance(row, list):
-                                        row_text = " | ".join([str(cell).strip() for cell in row if cell])
-                                        if row_text:
-                                            extracted_text.append(row_text)
-                                    else:
-                                        extracted_text.append(str(row))
-                                extracted_text.append("[表格结束]\n")
+                                # 检查是否是真正的表格（至少有2行2列）
+                                is_table = False
+                                if element and len(element) >= 1:
+                                    first_row = element[0]
+                                    if isinstance(first_row, list) and len(first_row) >= 2:
+                                        is_table = True
+                                
+                                if is_table:
+                                    extracted_text.append("\n[表格内容]")
+                                    for row in element:
+                                        if isinstance(row, list):
+                                            row_text = " | ".join([str(cell).strip() for cell in row if cell])
+                                            if row_text:
+                                                extracted_text.append(row_text)
+                                        else:
+                                            extracted_text.append(str(row))
+                                    extracted_text.append("[表格结束]\n")
+                                else:
+                                    # 不是表格，处理为普通文本
+                                    for item in element:
+                                        if isinstance(item, list):
+                                            # 嵌套列表，递归处理
+                                            for subitem in item:
+                                                text = str(subitem).strip()
+                                                if text:
+                                                    extracted_text.append(text)
+                                        else:
+                                            text = str(item).strip()
+                                            if text:
+                                                extracted_text.append(text)
                             else:
                                 # 普通文本，检查是否包含图片标记
                                 text = str(element).strip()
@@ -426,70 +449,19 @@ class FileService:
     
     @staticmethod
     async def _extract_docx_with_python_docx(file_path: str) -> str:
-        """使用python-docx提取Word文档内容和图片（增强版）"""
+        """使用python-docx提取Word文档内容和图片（简化版）"""
         doc = None
         try:
             doc = docx.Document(file_path)
             extracted_text = []
-            image_references = []  # 存储图片引用映射
-            global_img_counter = 1
 
-            # 获取Word文档的所有图片信息
-            all_images = FileService.extract_images_from_docx(file_path)
-
-            # 提取段落文本，同时处理图片
+            # 只提取段落文本，不处理表格和图片
             for paragraph in doc.paragraphs:
                 text = paragraph.text.strip()
                 if text:
-                    # 检查文本中是否有图片标记
-                    import re
-                    img_pattern = r'----.*?(?:image|img|media).*?----'
-                    img_matches = list(re.finditer(img_pattern, text, re.IGNORECASE))
+                    extracted_text.append(text)
 
-                    if img_matches and all_images:
-                        processed_text = text
-
-                        for match in img_matches:
-                            if global_img_counter <= len(all_images):
-                                # 获取对应的图片数据
-                                img_data, ext, img_index = all_images[global_img_counter - 1]
-                                filename = f"docx_img{global_img_counter}.{ext}"
-
-                                # 上传图片
-                                image_url = await FileService.upload_image_to_server(img_data, filename)
-
-                                if image_url:
-                                    # 替换图片标记
-                                    old_mark = match.group()
-                                    new_mark = f"[图片{global_img_counter}]"
-                                    processed_text = processed_text.replace(old_mark, new_mark, 1)
-
-                                    # 记录图片引用
-                                    image_references.append(f"[图片{global_img_counter}]: {image_url}")
-                                    global_img_counter += 1
-
-                        extracted_text.append(processed_text)
-                    else:
-                        extracted_text.append(text)
-
-            # 提取表格内容
-            for table_num, table in enumerate(doc.tables, 1):
-                extracted_text.append(f"\n[表格 {table_num}]")
-                for row in table.rows:
-                    row_data = []
-                    for cell in row.cells:
-                        cell_text = cell.text.strip()
-                        row_data.append(cell_text if cell_text else "")
-                    row_text = " | ".join(row_data)
-                    if row_text.strip():
-                        extracted_text.append(row_text)
-                extracted_text.append("[表格结束]\n")
-
-            # 在文档末尾添加图片引用映射
-            if image_references:
-                extracted_text.append(f"\n\n--- 图片引用 ---")
-                extracted_text.extend(image_references)
-
+            # 直接返回纯文本内容
             result = "\n".join(extracted_text).strip()
 
             # 确保释放资源

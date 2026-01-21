@@ -108,6 +108,7 @@ class KnowledgeGroupManager:
         documents = []
         for doc_id in doc_ids:
             # 尝试从Milvus获取文档信息，只请求必要的字段
+            # 注意：knowledge_base.get_document_by_id方法已经包含了集合加载逻辑
             doc_info = knowledge_base.get_document_by_id(doc_id, fields=['doc_id', 'section_title', 'title_path'])
             if doc_info:
                 documents.append(doc_info)

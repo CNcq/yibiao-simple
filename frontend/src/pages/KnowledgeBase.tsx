@@ -403,6 +403,23 @@ const KnowledgeBase: React.FC = () => {
                       <div className="font-medium">{group.name}</div>
                       <div className="text-sm text-gray-500">{group.description}</div>
                       <div className="text-xs text-gray-400 mt-1 document-count transition-all duration-300 ease-in-out">{group.documentCount} 个文档</div>
+                      {/* 显示文档列表 */}
+                      {group.documentCount > 0 && selectedGroup === group.id && (
+                        <div className="mt-2 text-xs space-y-1">
+                          {documents.length > 0 ? (
+                            documents.slice(0, 3).map(doc => (
+                              <div key={doc.id} className="text-gray-600 truncate">
+                                • {doc.sectionTitle}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-gray-400">加载中...</div>
+                          )}
+                          {documents.length > 3 && (
+                            <div className="text-gray-400">... 还有 {documents.length - 3} 个文档</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <button
                       onClick={(e) => {

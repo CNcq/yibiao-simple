@@ -48,7 +48,7 @@ async def health_check():
 # 静态文件服务（用于服务前端构建文件）
 if os.path.exists("static"):
     # 挂载静态资源文件夹
-    # app.mount("/static", StaticFiles(directory="static/static"), name="static")
+    app.mount("/static", StaticFiles(directory="static/static"), name="static")
     app.mount("/static", StaticFiles(directory="static"), name="static")
     
     # 处理React应用的路由（SPA路由支持）

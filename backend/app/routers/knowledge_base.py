@@ -132,16 +132,13 @@ async def delete_knowledge_base_group(group_name: str):
         操作结果
     """
     try:
-        # 获取分组下的所有文档
-        group_info = group_manager.get_group(group_name)
-        if group_info:
-            # 删除Milvus中的所有文档
-            for doc_info in group_info.get("documents", []):
-                knowledge_base.delete_document(doc_info["doc_id"])
-            
-        # 删除分组
-        group_manager.delete_group(group_name)
-        return {"success": True, "message": f"成功删除分组: {group_name}"}
+        # 直接调用分组管理器的delete_group方法
+        # delete_group方法已经包含了删除文档和分组的完整逻辑
+        success = group_manager.delete_group(group_name)
+        if success:
+            return {"success": True, "message": f"成功删除分组: {group_name}"}
+        else:
+            raise HTTPException(status_code=404, detail=f"分组 '{group_name}' 不存在")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除分组失败: {str(e)}")
 

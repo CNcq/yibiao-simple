@@ -35,6 +35,9 @@ class MilvusKnowledgeBase:
         self.index_params = settings.milvus_index_params
         self.search_params = settings.milvus_search_params
         
+        # 全局集合实例
+        self.collection = None
+        
         # 初始化嵌入模型
         # self.embedding_model = SentenceTransformer('Qwen/Qwen3-Embedding-0.6')
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -44,6 +47,19 @@ class MilvusKnowledgeBase:
         
         # 创建集合（如果不存在）
         self.create_collection()
+        
+        # 初始化集合实例
+        self._init_collection()
+    
+    def _init_collection(self):
+        """初始化集合实例"""
+        if not self.enable_milvus:
+            return
+        
+        self.collection = Collection(name=self.collection_name)
+        # 直接加载集合，不检查is_loaded属性（因为SDK版本不支持）
+        self.collection.load()
+        print(f"集合 {self.collection_name} 已加载")
     
     def connect(self):
         """连接到Milvus服务器"""
@@ -96,8 +112,16 @@ class MilvusKnowledgeBase:
                 index_params={"index_type": "Trie"}
             )
             print("成功为section_title创建倒排索引: Trie")
+            
+            # 加载集合
+            collection.load()
+            print(f"集合 {self.collection_name} 已加载")
         else:
             print(f"集合已存在: {self.collection_name}")
+            # 确保已存在的集合也被加载
+            collection = Collection(name=self.collection_name)
+            collection.load()
+            print(f"集合 {self.collection_name} 已加载")
     
     def add_documents(self, documents: List[Dict[str, Any]]):
         """向知识库添加文档
@@ -225,13 +249,24 @@ class MilvusKnowledgeBase:
     
     def delete_document(self, doc_id: str):
         """删除指定 ID 的文档"""
+        if not self.enable_milvus:
+            return
+        
+        # 直接创建新的Collection实例并立即加载
         collection = Collection(name=self.collection_name)
+        collection.load()  # 强制加载集合
+        print(f"集合 {self.collection_name} 已加载，准备删除文档")
+        
+        # 执行删除操作
         collection.delete(f"doc_id == '{doc_id}'")
         print(f"成功删除文档: {doc_id}")
+        
+        # 不需要卸载集合，保持加载状态
     
     def get_document_count(self) -> int:
         """获取知识库中文档数量"""
         collection = Collection(name=self.collection_name)
+        collection.load()
         return collection.num_entities
     
     def get_document_by_id(self, doc_id: str, fields: List[str] = ['doc_id', 'section_title', 'summary', 'title_path']) -> Optional[Dict[str, Any]]:
@@ -245,6 +280,8 @@ class MilvusKnowledgeBase:
             文档信息字典，如果不存在则返回 None
         """
         collection = Collection(name=self.collection_name)
+        # 确保集合已加载
+        collection.load()
         
         # 构建查询条件
         expr = f"doc_id == '{doc_id}'"
@@ -268,7 +305,11 @@ class MilvusKnowledgeBase:
         
         # 重新创建集合
         self.create_collection()
-        print("重新创建集合成功")
+        
+        # 加载重新创建的集合
+        collection = Collection(name=self.collection_name)
+        collection.load()
+        print(f"集合 {self.collection_name} 已加载")
         print("成功清空知识库")
 
 

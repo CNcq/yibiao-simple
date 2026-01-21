@@ -134,6 +134,7 @@ class OpenAIService:
                 if search_results:
                     knowledge_base_content = "知识库参考内容：\n"
                     for i, result in enumerate(search_results):
+                        print(result)
                         knowledge_base_content += f"参考{i+1} (相关性: {result['score']:.2f})：\n"
                         knowledge_base_content += f"标题: {result['title']}\n"
                         knowledge_base_content += f"内容: {result['content'][:500]}...\n\n"
